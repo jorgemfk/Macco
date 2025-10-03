@@ -3,11 +3,10 @@ import lcd
 from machine import PWM, Timer
 from fpioa_manager import fm
 import time
-import math
 
-MAX_ANGULO = 100  # Ángulo máximo permitido
+MAX_ANGULO = 100
 
-# Mapeo LED reloj → pesos por eje (X, -X, Y, -Y)
+# LED reloj mapeado a ejes: (X, -X, Y, -Y)
 led_ejes = [
     (1.0, 0.0, 0.0, 0.0), (0.7, 0.0, 0.7, 0.0), (0.0, 0.0, 1.0, 0.0),
     (0.0, 0.0, 0.7, 0.7), (0.0, 0.7, 0.0, 0.7), (0.0, 1.0, 0.0, 0.0),
@@ -28,11 +27,11 @@ fm.register(35, fm.fpioa.GPIO1)
 fm.register(34, fm.fpioa.GPIO2)
 fm.register(33, fm.fpioa.GPIO3)
 
-# Inicialización
+# Inicializar
 lcd.init()
 mic.init()
 
-# Configuración de PWM con timers válidos
+# PWM por eje
 servo_pwms = {
     'X':   PWM(Timer(Timer.TIMER0, Timer.CHANNEL0, mode=Timer.MODE_PWM), freq=50, duty=0, pin=17),
     '-X':  PWM(Timer(Timer.TIMER1, Timer.CHANNEL0, mode=Timer.MODE_PWM), freq=50, duty=0, pin=35),
@@ -40,26 +39,21 @@ servo_pwms = {
     '-Y':  PWM(Timer(Timer.TIMER0, Timer.CHANNEL1, mode=Timer.MODE_PWM), freq=50, duty=0, pin=33),
 }
 
-estado_servo = {eje: 0 for eje in servo_pins.keys()}
+estado_servo = {eje: 0 for eje in servo_pins}
+
+# Asignar color por eje
+colores = {
+    'X':   (255, 0, 0),     # Rojo
+    '-X':  (0, 255, 0),     # Verde
+    'Y':   (0, 0, 255),     # Azul
+    '-Y':  (255, 255, 0),   # Amarillo
+}
 
 def mover_servo(pwm, grados):
     grados = max(0, min(grados, MAX_ANGULO))
     pulse = 500 + int((grados / MAX_ANGULO) * 2000)
     duty = int((pulse / 20000.0) * 100)
     pwm.duty(duty)
-
-def mover_servo_gradual(pwm, eje, meta_grado):
-    actual = estado_servo[eje]
-    if actual == meta_grado:
-        return
-    pasos = 20
-    for i in range(pasos + 1):
-        t = i / pasos
-        interp = 0.5 - 0.5 * math.cos(math.pi * t)
-        grado = int(actual + (meta_grado - actual) * interp)
-        mover_servo(pwm, grado)
-        time.sleep_ms(15)
-    estado_servo[eje] = meta_grado
 
 def calcular_angulos_direccion(leds):
     pesos = {'X': 0, '-X': 0, 'Y': 0, '-Y': 0}
@@ -85,8 +79,24 @@ while True:
     print("LEDs:", leds)
     print("Ángulos:", grados)
 
+    # Actualizar servos
     for eje in ['X', '-X', 'Y', '-Y']:
-        mover_servo_gradual(servo_pwms[eje], eje, grados[eje])
+        if grados[eje] != estado_servo[eje]:
+            mover_servo(servo_pwms[eje], grados[eje])
+            estado_servo[eje] = grados[eje]
 
+    # Determinar color combinado
+    r, g, b = 0, 0, 0
+    for eje in grados:
+        if grados[eje] > 10:  # Considerar solo activaciones significativas
+            cr, cg, cb = colores[eje]
+            r += cr
+            g += cg
+            b += cb
+    r, g, b = min(r, 255), min(g, 255), min(b, 255)
+    mic.set_led(leds, (r, g, b))
+
+    # Mostrar visualización del mapa de sonido
     imgc = imga.resize(160, 160).to_rainbow(1)
     lcd.display(imgc)
+    time.sleep(0.5);
