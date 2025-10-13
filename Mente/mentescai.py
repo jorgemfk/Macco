@@ -69,19 +69,35 @@ def parens_balanced(code: str) -> bool:
 def unify_blocks(code: str) -> str:
     """Une SynthDef + Pbind en un solo bloque ( ... ) para SC."""
     code = code.strip()
-    code = code.lstrip("(\n").rstrip(")\n")
+    code = re.sub(
+        r'(?m)^[ \t]*```[^\n]*\n.*?^[ \t]*```[ \t]*\n?', 
+        '', 
+        code, 
+        flags=re.DOTALL | re.MULTILINE
+    )
+
+    # 2) Quitar cualquier comentario de una sola línea que empiece con //
+    code = re.sub(r'(?m)//.*$', '', code)
+
+    # 3) Si quedó alguna línea con solo ``` (p. ej. bloque abierto sin cerrar), quitarla
+    code = re.sub(r'(?m)^[ \t]*```.*$', '', code)
+    code = re.sub(r"```.*?```", "", code, flags=re.DOTALL)
+    code = re.sub(r'//.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'(?m)^[ \t]*[()] *$', '', code)
+    #code = code.lstrip("(\n").rstrip(")\n")
     #remove_unbalanced_parens(code)
-    code = code.replace(".add;\n)\n", ".add;\n")
-    code = code.replace(".fork;\n)\n", ".fork;\n")
-    code = code.replace("(\nPbind", "\nPbind")
-    code = code.replace("(\nPmono", "\nPmono")
-    code = code.replace(".play;\n)\n", ".play;\n")
+    #code = code.replace(".add;\n)\n", ".add;\n")
+    #code = code.replace(".fork;\n)\n", ".fork;\n")
+    #code = code.replace("(\nPbind", "\nPbind")
+    #code = code.replace("(\nPmono", "\nPmono")
+    #code = code.replace(".play;\n)\n", ".play;\n")
     #code = code.replace("\n)\n(", "\n")
     #code = code.replace(")\n(", "\n")
-    if not code.startswith("("):
-        code = "(\n" + code
-    if not code.endswith(")"):
-        code = code + "\n)"
+    #if not code.startswith("("):
+    #    code = "(\n" + code
+    #if not code.endswith(")"):
+    #    code = code + "\n)"
+    code = code.replace("\n", " ")  
     return code
 """
 def mostrar_info(mood: str):
@@ -143,11 +159,11 @@ while True:
 
     # Cada 10 mensajes, cambia+r estado de animo
     print(f"==== historia { len(chat_history)} ==== " )
-    if len(chat_history) % 5 == 0 or passs == 1:
+    if len(chat_history) % 1 == 0 or passs == 1:
         mood, mood_instruction = random.choice(moods)
 #        mostrar_info(mood)
-        system_msg = f"Eres un dj live coder  de codigo SuperCollider sensible y eclectico. con estado de animo actual: {mood}."
-        user_msg = f"Genera un instrumento o beat finito (tu decide el tipo y tiempo de duracion) formando una melodia que exprese {mood_instruction}. no des explicaciones. No agregues comentarios en el codigo generado"
+        system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
+        user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction}. no des explicaciones. No agregues comentarios en el codigo generado"
         chat_history[0] = {"role": "system", "content": system_msg}
         chat_history.append({"role": "user", "content": user_msg})
         print(f"==== MODO { mood } ==== " )
@@ -186,26 +202,30 @@ while True:
     print(sc_code)
     # Insertar dentro de s.waitForBoot solo si es la primera vez
     sc_code = unify_blocks(sc_code)
-    sc_code = sc_code.replace("\n", " ")
-    
     if parens_balanced(sc_code):
-        if passs == 1  :
-            if "s.boot" not in sc_code and "s.waitForBoot" not in sc_code:
-                sc_code = "s.waitForBoot({ " + sc_code + " });"
-            passs = 2
+        #if passs == 1  :
+        #    if "s.boot" not in sc_code and "s.waitForBoot" not in sc_code:
+        #        sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
+        #    passs = 2
+        #else :
+        #    sc_code = "(" + sc_code
+        #    sc_code = sc_code + ")"
+        sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
+          
         print("==== Nuevo bloque SC ====")
         print(sc_code)
         print("=========================")
             # Limpieza automatica de nodos antes de cargar
-        sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
-        sc_proc.stdin.flush()
-        time.sleep(5)
+        #sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
+        #sc_proc.stdin.write("s.freeAll;")     
+        #sc_proc.stdin.flush()
+        #time.sleep(5)
 
         # Enviar bloque a SC
         sc_proc.stdin.write(sc_code + "\n")
         sc_proc.stdin.flush()
         # Esperar antes de la siguiente iteracion
-        time.sleep(30)
+        time.sleep(60)
     else:
         print("?? Bloque descartado: parentesis no balanceados")
         print(sc_code)

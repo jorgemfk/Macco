@@ -90,7 +90,7 @@ while True:
     hist = img.get_histogram()
     stats = hist.get_statistics()
     #ref_img = img.copy()
-
+    print(leds)
     # Movimiento si varianza supera un umbral (ajustable)
     if stats.mean() > 40: #stats.stdev() > 15:
         print("Movimiento detectado")
