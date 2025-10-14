@@ -4,6 +4,7 @@ import re
 import random
 from openai import OpenAI
 import os
+import redis, json
 # import luma module
 #from luma.core.render import canvas
 #from luma.oled.device import ssd1306
@@ -18,6 +19,9 @@ sc_proc = subprocess.Popen(
     text=True
 )
 time.sleep(15)
+r = redis.Redis(host='localhost', port=6379, db=0)
+pubsub = r.pubsub()
+pubsub.subscribe("emociones")
 
 def remove_unbalanced_parens(code: str) -> str:
     """
@@ -142,92 +146,106 @@ passs = 1
 
 # Posibles estados de animo
 moods = [
-    ("triste", "beats oscuros, ambientales y lentos"),
-    ("feliz", "beats alegres, luminosos y melodicos"),
-    ("estresado", "beats febriles, rapidos y tensos"),
-    ("nostalgico", "ritmos texturas suaves y etereas"),
-    ("enojado", "tambores sonidos agresivos y percusivos")
+    ("Enojo", "ritmos percusivos intensos, distorsión, bajos saturados y tempos rápidos, uso de Saw o PulseOsc para agresividad"),
+    ("Asco", "texturas ruidosas, disonancias, filtros resonantes, sonidos ásperos y efectos glitch o ring modulation"),
+    ("Miedo", "ambiente oscuro con drones graves, reverberación profunda, tonos inestables y ruidos modulados lentamente"),
+    ("Feliz", "melodías brillantes y armónicas con ritmo animado, uso de Sine y Saw suaves, percusión ligera y arpegios ascendentes"),
+    ("Triste", "tempos lentos, acordes menores, pads etéreos con reverberación, uso de SinOsc y LPF para calidez melancolica"),
+    ("Sorpresa", "sonidos impredecibles, cambios abruptos de ritmo y tono, uso de Delay, FM o Sample&Hold, percusiones irregulares"),
+    ("Neutral", "ritmo constante y equilibrado, timbres suaves, balance entre ruido y tono, estructura minimalista y repetitiva")
 ]
+def get_mood_description(nombre):
+    for mood, desc in moods:
+        if mood.lower() == nombre.lower():
+            return desc
+    return "No se encontró ese mood."
 # inicializar oled?I2C1; direccion 0x3c
 #device = ssd1306(port=1, address=0x3C)
 # ---- 3. Bucle generativo ----
-while True:
+for message in pubsub.listen():
+    if message["type"] == "message":
+        data = json.loads(message["data"])
+        print("\n📢 Nuevo evento recibido:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+#while True:
     # Si historial muy grande (simulacion de tokens), recortar
-    total_chars = sum(len(m["content"]) for m in chat_history)
-    if total_chars > 4000:
-        chat_history = chat_history[-3:]  # conservar ultimos 6 mensajes
+        total_chars = sum(len(m["content"]) for m in chat_history)
+        if total_chars > 4000:
+            chat_history = chat_history[-3:]  # conservar ultimos 6 mensajes
 
-    # Cada 10 mensajes, cambia+r estado de animo
-    print(f"==== historia { len(chat_history)} ==== " )
-    if len(chat_history) % 1 == 0 or passs == 1:
-        mood, mood_instruction = random.choice(moods)
-#        mostrar_info(mood)
-        system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
-        user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction}. no des explicaciones. No agregues comentarios en el codigo generado"
-        chat_history[0] = {"role": "system", "content": system_msg}
-        chat_history.append({"role": "user", "content": user_msg})
-        print(f"==== MODO { mood } ==== " )
-        if passs == 2 :
-            sc_proc.stdin.write("s.record;2.wait;")
-            sc_proc.stdin.flush()
-            time.sleep(5)
-            sc_proc.stdin.write("s.stopRecording;")
-            sc_proc.stdin.flush()
-    else:
-        prompt = (
-            f"Genera en SuperCollider un nuevo instrumento ritmico ambiental que exprese {mood_instruction} "
-            "que complemente una orquesta agradable con base en tus anteriores respuestas. "
-            "Debe definir un SynthDef y un patron (Pbind/Pseq/Prand) autocontenible finito (tu decide el tipo y tiempo de duracion) . "
-            "No repitas el nombre de SynthDef anterior. No agregues comentarios en el codigo generado"
+        # Cada 10 mensajes, cambia+r estado de animo
+        print(f"==== historia { len(chat_history)} ==== " )
+        if len(chat_history) % 1 == 0 or passs == 1:
+            mood = data["emocion"]
+            mood_instruction = get_mood_description(mood)
+            #mood, mood_instruction = random.choice(moods)
+    #        mostrar_info(mood)
+            system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
+            user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction}. no des explicaciones. No agregues comentarios en el codigo generado"
+            chat_history[0] = {"role": "system", "content": system_msg}
+            chat_history.append({"role": "user", "content": user_msg})
+            print(f"==== MODO { mood } ==== " )
+            if passs == 2 :
+                sc_proc.stdin.write("s.record;2.wait;")
+                sc_proc.stdin.flush()
+                time.sleep(5)
+                sc_proc.stdin.write("s.stopRecording;")
+                sc_proc.stdin.flush()
+        else:
+            prompt = (
+                f"Genera en SuperCollider un nuevo instrumento ritmico ambiental que exprese {mood_instruction} "
+                "que complemente una orquesta agradable con base en tus anteriores respuestas. "
+                "Debe definir un SynthDef y un patron (Pbind/Pseq/Prand) autocontenible finito (tu decide el tipo y tiempo de duracion) . "
+                "No repitas el nombre de SynthDef anterior. No agregues comentarios en el codigo generado"
+            )
+            chat_history.append({"role": "user", "content": prompt})
+
+        # Llamada al modelo
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=chat_history,
+            temperature=0.7
         )
-        chat_history.append({"role": "user", "content": prompt})
 
-    # Llamada al modelo
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=chat_history,
-        temperature=0.7
-    )
+        sc_code = response.choices[0].message.content.strip()
+        chat_history.append({"role": "assistant", "content": sc_code})
 
-    sc_code = response.choices[0].message.content.strip()
-    chat_history.append({"role": "assistant", "content": sc_code})
+        # Extraer bloque SC
+        match = re.search(r"```[\w]*\n(.*?)```", sc_code, re.S)
+        if match:
+            sc_code = match.group(1).strip()
 
-    # Extraer bloque SC
-    match = re.search(r"```[\w]*\n(.*?)```", sc_code, re.S)
-    if match:
-        sc_code = match.group(1).strip()
-
-    
-    print("==== Bloque original ====")
-    print(sc_code)
-    # Insertar dentro de s.waitForBoot solo si es la primera vez
-    sc_code = unify_blocks(sc_code)
-    if parens_balanced(sc_code):
-        #if passs == 1  :
-        #    if "s.boot" not in sc_code and "s.waitForBoot" not in sc_code:
-        #        sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
-        #    passs = 2
-        #else :
-        #    sc_code = "(" + sc_code
-        #    sc_code = sc_code + ")"
-        sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
-          
-        print("==== Nuevo bloque SC ====")
+        
+        print("==== Bloque original ====")
         print(sc_code)
-        print("=========================")
-            # Limpieza automatica de nodos antes de cargar
-        #sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
-        #sc_proc.stdin.write("s.freeAll;")     
-        #sc_proc.stdin.flush()
-        #time.sleep(5)
+        # Insertar dentro de s.waitForBoot solo si es la primera vez
+        sc_code = unify_blocks(sc_code)
+        if parens_balanced(sc_code):
+            #if passs == 1  :
+            #    if "s.boot" not in sc_code and "s.waitForBoot" not in sc_code:
+            #        sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
+            #    passs = 2
+            #else :
+            #    sc_code = "(" + sc_code
+            #    sc_code = sc_code + ")"
+            sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
+            
+            print("==== Nuevo bloque SC ====")
+            print(sc_code)
+            print("=========================")
+                # Limpieza automatica de nodos antes de cargar
+            #sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
+            #sc_proc.stdin.write("s.freeAll;")     
+            #sc_proc.stdin.flush()
+            #time.sleep(5)
 
-        # Enviar bloque a SC
-        sc_proc.stdin.write(sc_code + "\n")
-        sc_proc.stdin.flush()
-        # Esperar antes de la siguiente iteracion
-        time.sleep(60)
-    else:
-        print("?? Bloque descartado: parentesis no balanceados")
-        print(sc_code)
-        chat_history = chat_history[:-2] 
-    
+            # Enviar bloque a SC
+            sc_proc.stdin.write(sc_code + "\n")
+            sc_proc.stdin.flush()
+            # Esperar antes de la siguiente iteracion
+            #time.sleep(3)
+        else:
+            print("?? Bloque descartado: parentesis no balanceados")
+            print(sc_code)
+            chat_history = chat_history[:-2] 
+        

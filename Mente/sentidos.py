@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
-import time, json, os, datetime
+from tinydb import TinyDB, Query
 from openai import OpenAI
+import redis, json, time, datetime, os
 
 # ---------------------------
 # Clase Vista
@@ -8,34 +9,54 @@ from openai import OpenAI
 
 class Vista:
     def __init__(self):
+        # --- Configuración base ---
         self.app = Flask(__name__)
         self.client = OpenAI()
+        self.db = TinyDB("emociones_diarias.json")
+        self.r = redis.Redis(host='localhost', port=6379, db=0)
         self.last_request_time = None
-        self.data_file = "emociones_diarias.json"
+
         self.emociones = ["Enojo", "Asco", "Miedo", "Feliz", "Triste", "Sorpresa", "Neutral"]
 
-        # Cargar datos previos
-        self._load_data()
-
-        # Definir rutas
+        # --- Definir ruta principal ---
         self.app.add_url_rule("/emociones", "emociones", self.handle_emociones, methods=["POST"])
 
-    def _load_data(self):
-        """Carga o inicializa el archivo diario de emociones."""
+    # ---------------------------
+    # Métodos internos
+    # ---------------------------
+
+    def _get_today_record(self):
+        """Obtiene o crea el registro diario en TinyDB."""
         today = datetime.date.today().isoformat()
-        if os.path.exists(self.data_file):
-            with open(self.data_file, "r") as f:
-                self.data = json.load(f)
-        else:
-            self.data = {}
+        Emocion = Query()
+        result = self.db.search(Emocion.fecha == today)
+        if not result:
+            record = {
+                "fecha": today,
+                "ultima_actualizacion": None,
+                "emociones": {e: 0 for e in self.emociones}
+            }
+            self.db.insert(record)
+            return record
+        return result[0]
 
-        if today not in self.data:
-            self.data[today] = {e: 0 for e in self.emociones}
+    def _update_today_record(self, emocion_data):
+        """Actualiza conteos e inserta hora de última invocación."""
+        today = datetime.date.today().isoformat()
+        Emocion = Query()
+        record = self._get_today_record()
 
-    def _save_data(self):
-        """Guarda los totales diarios."""
-        with open(self.data_file, "w") as f:
-            json.dump(self.data, f, indent=2)
+        # Actualizar conteos
+        for e, c in emocion_data.items():
+            if e in self.emociones:
+                record["emociones"][e] += c
+
+        # Actualizar hora
+        record["ultima_actualizacion"] = datetime.datetime.now().isoformat()
+
+        # Guardar cambios
+        self.db.update(record, Emocion.fecha == today)
+        return record
 
     def _get_time_since_last_request(self):
         """Devuelve segundos desde la última petición."""
@@ -47,26 +68,15 @@ class Vista:
         self.last_request_time = now
         return delta
 
-    def _update_daily_counts(self, emocion_data):
-        """Suma los rostros recibidos a los totales del día."""
-        today = datetime.date.today().isoformat()
-        for emocion, cantidad in emocion_data.items():
-            if emocion in self.emociones:
-                self.data[today][emocion] += cantidad
-        self._save_data()
-
-    def _analyze_with_openai(self):
-        """Envía los totales diarios a OpenAI para obtener interpretación."""
-        today = datetime.date.today().isoformat()
-        totals = self.data[today]
-
+    def _analyze_with_openai(self, totals):
+        """Envía totales diarios a OpenAI."""
         prompt = (
             "Analiza las siguientes ocurrencias de emociones detectadas hoy:\n\n"
-            + "\n".join([f"{e}: {totals[e]}" for e in self.emociones])
-            + "\n\nDetermina cómo se siente el grupo en general, "
+            + "\n".join([f"{e}: {totals['emociones'][e]}" for e in self.emociones])
+            + "\n\nDetermina cómo se siente el grupo en general muy breve, "
               "limitando tu respuesta a una de estas emociones: "
               '["Enojo", "Asco", "Miedo", "Feliz", "Triste", "Sorpresa", "Neutral"]. '
-              "Inicia con: Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral] solo una de estas emociones como respuesta al estado del grupo y explica porque te sientes asi"
+              "Inicia con: Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral] solo una de estas emociones como respuesta al estado del grupo y explica muy breve porque te sientes asi"
         )
 
         response = self.client.chat.completions.create(
@@ -77,6 +87,23 @@ class Vista:
 
         return response.choices[0].message.content.strip()
 
+    def _publish_to_redis(self, record, respuesta):
+        """Publica en Redis el JSON actualizado con la respuesta."""
+        tokens = respuesta.split()       
+        segundo = tokens[1].replace(",", "")
+        data = {
+            "fecha": record["fecha"],
+            "ultima_actualizacion": record["ultima_actualizacion"],
+            "emociones": record["emociones"],
+            "respuesta_openai": respuesta,
+            "emocion": segundo
+        }
+        self.r.publish("emociones", json.dumps(data))
+
+    # ---------------------------
+    # Servicio Flask
+    # ---------------------------
+
     def handle_emociones(self):
         """Servicio POST principal."""
         try:
@@ -84,17 +111,23 @@ class Vista:
             emocion_data = data.get("emociones", {})
             tiempo = self._get_time_since_last_request()
 
-            self._update_daily_counts(emocion_data)
-            analisis = self._analyze_with_openai()
+            record = self._update_today_record(emocion_data)
+            analisis = self._analyze_with_openai(record)
+            self._publish_to_redis(record, analisis)
 
             return jsonify({
                 "tiempo_desde_ultima_peticion_seg": tiempo,
                 "emociones_recibidas": emocion_data,
+                "registro_actualizado": record,
                 "respuesta_openai": analisis
             })
 
         except Exception as e:
             return jsonify({"error": str(e)}), 400
+
+    # ---------------------------
+    # Ejecutar servidor
+    # ---------------------------
 
     def run(self, host="0.0.0.0", port=5820):
         self.app.run(host=host, port=port)
@@ -107,4 +140,3 @@ class Vista:
 if __name__ == "__main__":
     vista = Vista()
     vista.run()
-
