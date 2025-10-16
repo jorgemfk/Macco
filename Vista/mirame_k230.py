@@ -13,6 +13,76 @@ import nncase_runtime as nn
 import ulab.numpy as np
 import image
 import aidemo
+import network,time
+from machine import Pin
+import ujson
+import usocket
+
+# ==========================================================
+# red
+# ==========================================================
+def enviar_emociones(resumen):
+    try:
+        data = ujson.dumps({"emociones": resumen})
+        host = "192.168.1.217"
+        port = 5820
+        path = "/emociones"
+
+        s = usocket.socket()
+        s.connect((host, port))
+        s.send(b"POST %s HTTP/1.0\r\n" % path.encode())
+        s.send(b"Host: %s\r\n" % host.encode())
+        s.send(b"Content-Type: application/json\r\n")
+        s.send(b"Content-Length: %d\r\n\r\n" % len(data))
+        s.send(data.encode())
+        s.close()
+        print(" POST enviado")
+    except Exception as e:
+        print(" Error POST:", e)
+
+def WIFI_Connect():
+
+    WIFI_LED=Pin(52, Pin.OUT)
+
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+
+    if not wlan.isconnected():
+
+        print('conectando...')
+
+        for i in range(10):
+
+            wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
+
+            if wlan.isconnected():
+                break
+
+    if wlan.isconnected():
+
+        print('connectado')
+
+
+        WIFI_LED.value(1)
+
+
+        while wlan.ifconfig()[0] == '0.0.0.0':
+            pass
+
+
+        print('network :', wlan.ifconfig())
+
+    else:
+
+
+        for i in range(3):
+            WIFI_LED.value(1)
+            time.sleep_ms(300)
+            WIFI_LED.value(0)
+            time.sleep_ms(300)
+
+        wlan.active(False)
+
 
 # ==========================================================
 # Clase de detección de rostros
@@ -110,6 +180,7 @@ class FaceEmotion:
         self.face_det.config_preprocess()
         self.rgb888p_size = rgb888p_size
         self.display_size = display_size
+        self.last_resumen = None
 
     def run(self, img):
         dets = self.face_det.run(img)
@@ -123,6 +194,7 @@ class FaceEmotion:
     def draw_result(self, pl, dets, emotions):
         pl.osd_img.clear()
         if dets:
+            resumen = {}
             for det, emotion in zip(dets, emotions):
                 x, y, w, h = map(lambda x: int(round(x, 0)), det[:4])
                 x = x * self.display_size[0] // self.rgb888p_size[0]
@@ -137,6 +209,14 @@ class FaceEmotion:
                 text_y = max(0, y - 25)
                 pl.osd_img.draw_string(text_x, text_y, emotion,
                                        color=(255,255,0,255), scale=2)
+                # --- Contar emociones ---
+                resumen[emotion] = resumen.get(emotion, 0) + 1
+
+            if resumen != self.last_resumen:
+                self.last_resumen = resumen
+                print(resumen)
+            # --- Enviar POST con resumen ---
+                enviar_emociones(resumen)
 
 # ==========================================================
 # MAIN
@@ -168,6 +248,7 @@ if __name__=="__main__":
                      face_det_input_size, emotion_input_size, anchors,
                      confidence_threshold, nms_threshold,
                      rgb888p_size, display_size)
+    WIFI_Connect()
 
     while True:
         with ScopedTiming("total",1):

@@ -151,7 +151,7 @@ moods = [
     ("Miedo", "ambiente oscuro con drones graves, reverberación profunda, tonos inestables y ruidos modulados lentamente"),
     ("Feliz", "melodías brillantes y armónicas con ritmo animado, uso de Sine y Saw suaves, percusión ligera y arpegios ascendentes"),
     ("Triste", "tempos lentos, acordes menores, pads etéreos con reverberación, uso de SinOsc y LPF para calidez melancolica"),
-    ("Sorpresa", "sonidos impredecibles, cambios abruptos de ritmo y tono, uso de Delay, FM o Sample&Hold, percusiones irregulares"),
+    ("Sorpresa", "sonidos impredecibles, cambios abruptos de ritmo y tono, FM o Sample&Hold, percusiones irregulares"),
     ("Neutral", "ritmo constante y equilibrado, timbres suaves, balance entre ruido y tono, estructura minimalista y repetitiva")
 ]
 def get_mood_description(nombre):
@@ -175,30 +175,16 @@ for message in pubsub.listen():
 
         # Cada 10 mensajes, cambia+r estado de animo
         print(f"==== historia { len(chat_history)} ==== " )
-        if len(chat_history) % 1 == 0 or passs == 1:
-            mood = data["emocion"]
-            mood_instruction = get_mood_description(mood)
-            #mood, mood_instruction = random.choice(moods)
+        mood = data["emocion"]
+        mood_instruction = get_mood_description(mood)
+        #mood, mood_instruction = random.choice(moods)
     #        mostrar_info(mood)
-            system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
-            user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction}. no des explicaciones. No agregues comentarios en el codigo generado"
-            chat_history[0] = {"role": "system", "content": system_msg}
-            chat_history.append({"role": "user", "content": user_msg})
-            print(f"==== MODO { mood } ==== " )
-            if passs == 2 :
-                sc_proc.stdin.write("s.record;2.wait;")
-                sc_proc.stdin.flush()
-                time.sleep(5)
-                sc_proc.stdin.write("s.stopRecording;")
-                sc_proc.stdin.flush()
-        else:
-            prompt = (
-                f"Genera en SuperCollider un nuevo instrumento ritmico ambiental que exprese {mood_instruction} "
-                "que complemente una orquesta agradable con base en tus anteriores respuestas. "
-                "Debe definir un SynthDef y un patron (Pbind/Pseq/Prand) autocontenible finito (tu decide el tipo y tiempo de duracion) . "
-                "No repitas el nombre de SynthDef anterior. No agregues comentarios en el codigo generado"
-            )
-            chat_history.append({"role": "user", "content": prompt})
+        system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
+        user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction} con SynthDef y un patron (Pbind/Pseq/Prand) . no des explicaciones. No agregues comentarios en el codigo generado. No inventes funciones tampoco clases, no uses .delay(). no uses archivos wav externos con Buffer.read"
+        chat_history[0] = {"role": "system", "content": system_msg}
+        chat_history.append({"role": "user", "content": user_msg})
+        print(f"==== MODO { mood } ==== " )
+
 
         # Llamada al modelo
         response = client.chat.completions.create(
