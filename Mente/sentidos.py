@@ -73,16 +73,16 @@ class Vista:
         prompt = (
             "Analiza las siguientes ocurrencias de emociones detectadas hoy:\n\n"
             + "\n".join([f"{e}: {totals['emociones'][e]}" for e in self.emociones])
-            + "\n\nDetermina cómo se siente el grupo en general muy breve, "
+            + "\n\n "
               "limitando tu respuesta a una de estas emociones: "
               '["Enojo", "Asco", "Miedo", "Feliz", "Triste", "Sorpresa", "Neutral"]. '
-              "Inicia con: Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral] solo una de estas emociones como respuesta al estado del grupo y explica muy breve porque te sientes asi"
+              "Inicia con: Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral] solo una de estas emociones, imagina que eres un compositor y tu audiencia tiene las emociones detectadas, expica en un enunciado como te hace sentir como compositor de una manera coloquial"
         )
 
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.5
+            temperature=0.9
         )
 
         return response.choices[0].message.content.strip()
@@ -90,7 +90,7 @@ class Vista:
     def _publish_to_redis(self, record, respuesta):
         """Publica en Redis el JSON actualizado con la respuesta."""
         tokens = respuesta.split()       
-        segundo = tokens[1].replace(",", "")
+        segundo = tokens[1].replace(",", "").replace(".", "").replace(":", "")
         data = {
             "fecha": record["fecha"],
             "ultima_actualizacion": record["ultima_actualizacion"],

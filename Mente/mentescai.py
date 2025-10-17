@@ -165,7 +165,7 @@ def get_mood_description(nombre):
 for message in pubsub.listen():
     if message["type"] == "message":
         data = json.loads(message["data"])
-        print("\n📢 Nuevo evento recibido:")
+        print("\n Nuevo evento recibido:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 #while True:
     # Si historial muy grande (simulacion de tokens), recortar
@@ -217,8 +217,8 @@ for message in pubsub.listen():
             sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
             
             print("==== Nuevo bloque SC ====")
-            print(sc_code)
-            print("=========================")
+            #print(sc_code)
+            #print("=========================")
                 # Limpieza automatica de nodos antes de cargar
             #sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
             #sc_proc.stdin.write("s.freeAll;")     
