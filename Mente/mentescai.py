@@ -5,16 +5,17 @@ import random
 from openai import OpenAI
 import os
 import redis, json
-# import luma module
-#from luma.core.render import canvas
-#from luma.oled.device import ssd1306
+#import luma module
+from luma.core.render import canvas
+from luma.oled.device import ssd1306
+from textwrap import wrap
 # libreras del sistema
-#import psutil
+import psutil
 
 
 # ---- 1. Arrancar SuperCollider (sclang) ----
 sc_proc = subprocess.Popen(
-    ["/Applications/SuperCollider.app/Contents/MacOS/sclang"],
+    ["pw-jack","sclang"],
     stdin=subprocess.PIPE,
     text=True
 )
@@ -74,9 +75,9 @@ def unify_blocks(code: str) -> str:
     """Une SynthDef + Pbind en un solo bloque ( ... ) para SC."""
     code = code.strip()
     code = re.sub(
-        r'(?m)^[ \t]*```[^\n]*\n.*?^[ \t]*```[ \t]*\n?', 
-        '', 
-        code, 
+        r'(?m)^[ \t]*```[^\n]*\n.*?^[ \t]*```[ \t]*\n?',
+        '',
+        code,
         flags=re.DOTALL | re.MULTILINE
     )
 
@@ -101,13 +102,13 @@ def unify_blocks(code: str) -> str:
     #    code = "(\n" + code
     #if not code.endswith(")"):
     #    code = code + "\n)"
-    code = code.replace("\n", " ")  
+    code = code.replace("\n", " ")
     return code
-"""
+
 def mostrar_info(mood: str):
-    
-    Muestra en la pantalla OLED el estado de animo, uso de CPU, temperatura y RAM.
-        
+
+    #Muestra en la pantalla OLED el estado de animo, uso de CPU, temperatura y RAM.
+
     # obtener datos del sistema
     cpu_usage = f"CPU: {psutil.cpu_percent()} %"
     mem = psutil.virtual_memory()
@@ -122,11 +123,18 @@ def mostrar_info(mood: str):
 
     # mostrar en OLED
     with canvas(device) as draw:
-        draw.text((0, 0), f"Estado: {mood}", fill="white")
-        draw.text((0, 15), cpu_usage, fill="white")
-        draw.text((0, 30), f"Temp: {temp}", fill="white")
-        draw.text((0, 45), mem_usage, fill="white")
-"""
+        max_width = 20
+        lines = wrap(mood, width=max_width)
+        y = 0
+        for line in lines:
+            draw.text((0, y), line, fill="white")
+            y += 10
+    #with canvas(device) as draw:
+        #draw.text((0, 0), f"{mood}", fill="white")
+        #draw.text((0, 15), cpu_usage, fill="white")
+        #draw.text((0, 30), f"Temp: {temp}", fill="white")
+        #draw.text((0, 45), mem_usage, fill="white")
+
 def extract_code(text):
     """Extrae bloque de codigo entre backticks"""
     match = re.search(r"```[\w]*\n(.*?)```", text, re.S)
@@ -160,7 +168,7 @@ def get_mood_description(nombre):
             return desc
     return "No se encontró ese mood."
 # inicializar oled?I2C1; direccion 0x3c
-#device = ssd1306(port=1, address=0x3C)
+device = ssd1306(port=1, address=0x3C)
 # ---- 3. Bucle generativo ----
 for message in pubsub.listen():
     if message["type"] == "message":
@@ -170,20 +178,28 @@ for message in pubsub.listen():
 #while True:
     # Si historial muy grande (simulacion de tokens), recortar
         total_chars = sum(len(m["content"]) for m in chat_history)
-        if total_chars > 4000:
+        if total_chars > 8000:
             chat_history = chat_history[-3:]  # conservar ultimos 6 mensajes
 
         # Cada 10 mensajes, cambia+r estado de animo
         print(f"==== historia { len(chat_history)} ==== " )
-        mood = data["emocion"]
-        mood_instruction = get_mood_description(mood)
+        #mood = data["emocion"]
+        #mood_instruction = get_mood_description(mood)
+
+        parts = re.split(r"(?<=\))\s|\n", data["respuesta_openai"], maxsplit=1)
+        first_sentence = parts[0].strip() if parts else ""
+        second_sentence = parts[1].strip() if len(parts) > 1 else ""
+
+        mood = first_sentence
+        mood_instruction = second_sentence
+
         #mood, mood_instruction = random.choice(moods)
-    #        mostrar_info(mood)
+        mostrar_info(mood)
         system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
         user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction} con SynthDef y un patron (Pbind/Pseq/Prand) . no des explicaciones. No agregues comentarios en el codigo generado. No inventes funciones tampoco clases, no uses .delay(). no uses archivos wav externos con Buffer.read"
         chat_history[0] = {"role": "system", "content": system_msg}
         chat_history.append({"role": "user", "content": user_msg})
-        print(f"==== MODO { mood } ==== " )
+        print(f"==== MODO { system_msg } ==== " )
 
 
         # Llamada al modelo
@@ -201,7 +217,7 @@ for message in pubsub.listen():
         if match:
             sc_code = match.group(1).strip()
 
-        
+
         print("==== Bloque original ====")
         print(sc_code)
         # Insertar dentro de s.waitForBoot solo si es la primera vez
@@ -215,13 +231,13 @@ for message in pubsub.listen():
             #    sc_code = "(" + sc_code
             #    sc_code = sc_code + ")"
             sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
-            
+
             print("==== Nuevo bloque SC ====")
             #print(sc_code)
             #print("=========================")
                 # Limpieza automatica de nodos antes de cargar
             #sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
-            #sc_proc.stdin.write("s.freeAll;")     
+            #sc_proc.stdin.write("s.freeAll;")
             #sc_proc.stdin.flush()
             #time.sleep(5)
 
@@ -233,5 +249,4 @@ for message in pubsub.listen():
         else:
             print("?? Bloque descartado: parentesis no balanceados")
             print(sc_code)
-            chat_history = chat_history[:-2] 
-        
+            chat_history = chat_history[:-2]

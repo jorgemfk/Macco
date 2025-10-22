@@ -70,14 +70,36 @@ class Vista:
 
     def _analyze_with_openai(self, totals):
         """Envía totales diarios a OpenAI."""
+
+        # Emoji ASCII por emoci�n
+        ascii_emojis = {
+            "Enojo": "(>_<)",
+            "Asco": "(*_*)",
+            "Miedo": "(0_0;)",
+            "Feliz": "(^_^)",
+            "Triste": "(T_T)",
+            "Sorpresa": "(@_@)",
+            "Neutral": "(-_-)"
+        }
+
+        """Genera el mood (estado emocional) y su instruccion musical en lenguaje natural."""
         prompt = (
-            "Analiza las siguientes ocurrencias de emociones detectadas hoy:\n\n"
+            "Analiza las siguientes emociones detectadas hoy en el publico:\n\n"
             + "\n".join([f"{e}: {totals['emociones'][e]}" for e in self.emociones])
-            + "\n\n "
-              "limitando tu respuesta a una de estas emociones: "
-              '["Enojo", "Asco", "Miedo", "Feliz", "Triste", "Sorpresa", "Neutral"]. '
-              "Inicia con: Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral] solo una de estas emociones, imagina que eres un compositor y tu audiencia tiene las emociones detectadas, expica en un enunciado como te hace sentir como compositor de una manera coloquial"
+            + "\n\n"
+            "Debes responder con DOS enunciados unicos:\n"
+            "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral]' "
+            "(elige solo una de estas emociones). Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
+            "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
+            "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider, "
+            "mencionando ritmo, textura, instrumentos o tono.\n\n"
+            "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
+            "Ejemplo:\n"
+            "Siento Feliz, como si las notas saltaran en una pista de baile. (^_^)\n"
+            "Creare una sinfonia brillante con arpegios ascendentes y percusion ligera.\n\n"
+            "Ahora genera tu respuesta."
         )
+
 
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -87,9 +109,37 @@ class Vista:
 
         return response.choices[0].message.content.strip()
 
+    def _sanitize_text(self, text: str) -> str:
+        """Decodifica caracteres escapados tipo \\u00e1 y elimina acentos."""
+        # Primero decodificamos cualquier secuencia tipo \u00e1
+        text = text.encode('utf-8').decode('unicode_escape')
+
+        # Diccionario de reemplazos usando c�digos Unicode (sin escribir acentos directamente)
+        replacements = {
+            '\u00e1': 'a',  #
+            '\u00e9': 'e',  #
+            '\u00ed': 'i',  #
+            '\u00f3': 'o',  #
+            '\u00fa': 'u',  #
+            '\u00c1': 'A',  #
+            '\u00c9': 'E',  # �
+            '\u00cd': 'I',  # �
+            '\u00d3': 'O',  # �
+            '\u00da': 'U',  # �
+            '\u00f1': 'n',  # �
+            '\u00d1': 'N',  # �
+            '\u00fc': 'u',  # �
+            '\u00dc': 'U',  # �
+        }
+
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+
+        return text
+
     def _publish_to_redis(self, record, respuesta):
         """Publica en Redis el JSON actualizado con la respuesta."""
-        tokens = respuesta.split()       
+        tokens = respuesta.split()
         segundo = tokens[1].replace(",", "").replace(".", "").replace(":", "")
         data = {
             "fecha": record["fecha"],
@@ -109,10 +159,12 @@ class Vista:
         try:
             data = request.get_json()
             emocion_data = data.get("emociones", {})
+            print(emocion_data)
             tiempo = self._get_time_since_last_request()
 
             record = self._update_today_record(emocion_data)
             analisis = self._analyze_with_openai(record)
+            analisis = self._sanitize_text(analisis)
             self._publish_to_redis(record, analisis)
 
             return jsonify({
