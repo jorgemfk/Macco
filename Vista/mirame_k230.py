@@ -17,18 +17,43 @@ import network,time
 from machine import Pin
 import ujson
 import usocket
+import _thread
 
 # ==========================================================
 # red
 # ==========================================================
+
+pendientes = []
+ultimo_envio = 0
+
+
+
+def enviar_emociones_hilo(resumen):
+    _thread.start_new_thread(enviar_emociones, (resumen,))
+
+def enviar_emociones_async(resumen):
+    global pendientes
+    pendientes.append(resumen)
+
+def procesar_envios_pendientes():
+    global pendientes, ultimo_envio
+    if len(pendientes) > 0:
+        ahora = time.ticks_ms()
+        if time.ticks_diff(ahora, ultimo_envio) > 2000:  # cada 2 s
+            resumen = pendientes.pop(0)
+            enviar_emociones_hilo(resumen)
+            ultimo_envio = ahora
+
 def enviar_emociones(resumen):
     try:
         data = ujson.dumps({"emociones": resumen})
-        host = "192.168.1.217"
+        #host = "192.168.1.224"
+        host = "192.168.0.200"
         port = 5820
         path = "/emociones"
 
         s = usocket.socket()
+        s.settimeout(3.0)  # evita que se bloquee demasiado
         s.connect((host, port))
         s.send(b"POST %s HTTP/1.0\r\n" % path.encode())
         s.send(b"Host: %s\r\n" % host.encode())
@@ -40,11 +65,15 @@ def enviar_emociones(resumen):
     except Exception as e:
         print(" Error POST:", e)
 
+
+
 def WIFI_Connect():
 
     WIFI_LED=Pin(52, Pin.OUT)
 
     wlan = network.WLAN(network.STA_IF)
+    #wlan.disconnect()        # 🔹 Rompe cualquier conexión previa
+    time.sleep(0.5)
     wlan.active(True)
 
     if not wlan.isconnected():
@@ -53,8 +82,8 @@ def WIFI_Connect():
 
         for i in range(10):
 
-            wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
-
+            #wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
+            wlan.connect('Bait_F-02_1521', '1234567890')
             if wlan.isconnected():
                 break
 
@@ -181,6 +210,9 @@ class FaceEmotion:
         self.rgb888p_size = rgb888p_size
         self.display_size = display_size
         self.last_resumen = None
+        self.last_send_time = 0
+        self.stable_counter = 0         # contador de estabilidad
+        self.required_stable_frames = 3 # mínimo de frames iguales antes de enviar
 
     def run(self, img):
         dets = self.face_det.run(img)
@@ -211,12 +243,22 @@ class FaceEmotion:
                                        color=(255,255,0,255), scale=2)
                 # --- Contar emociones ---
                 resumen[emotion] = resumen.get(emotion, 0) + 1
+            current_time = time.ticks_ms()
+            tiempo_desde_ultimo = time.ticks_diff(current_time, self.last_send_time)
 
-            if resumen != self.last_resumen:
-                self.last_resumen = resumen
-                print(resumen)
-            # --- Enviar POST con resumen ---
-                enviar_emociones(resumen)
+            # --- Control de estabilidad ---
+            if resumen == self.last_resumen:
+                self.stable_counter += 1
+            else:
+                self.stable_counter = 0
+            self.last_resumen = resumen
+
+            # --- Solo envía si la emoción se mantuvo estable N frames y pasaron 2 s ---
+            if self.stable_counter >= self.required_stable_frames and tiempo_desde_ultimo > 2000:
+                print("Emociones estables:", resumen)
+                enviar_emociones_async(resumen)
+                self.last_send_time = current_time
+                self.stable_counter = 0  # Reinicia después de enviar
 
 # ==========================================================
 # MAIN
@@ -256,6 +298,7 @@ if __name__=="__main__":
             dets, emotions = fe.run(img)        # Inferencia
             fe.draw_result(pl, dets, emotions)  # Dibuja resultados
             pl.show_image()                     # Muestra en pantalla
+            procesar_envios_pendientes()
             gc.collect()
 
     fe.face_det.deinit()

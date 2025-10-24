@@ -179,8 +179,24 @@ for message in pubsub.listen():
         mood_instruction = get_mood_description(mood)
         #mood, mood_instruction = random.choice(moods)
     #        mostrar_info(mood)
-        system_msg = f"Eres un dj live coder  de codigo SuperCollider version 3.10 sensible y eclectico. con estado de animo actual: {mood}."
-        user_msg = f"Genera 5 instrumentos o beat que juntos formen una melodia que exprese {mood_instruction} con SynthDef y un patron (Pbind/Pseq/Prand) . no des explicaciones. No agregues comentarios en el codigo generado. No inventes funciones tampoco clases, no uses .delay(). no uses archivos wav externos con Buffer.read"
+        system_msg = f"Eres un DJ live coder en SuperCollider 3.10, capaz de generar texturas musicales con base en emociones. Estado actual: {mood}."
+        user_msg = f"""
+Genera código SuperCollider (SC 3.10) con entre 5 y 7 SynthDef y patrones Pbind/Pseq/Prand
+que juntos expresen {mood_instruction}.
+
+Restricciones:
+- Solo puedes usar: SynthDef, SinOsc, Saw, Pulse, LFPulse, Env, EnvGen, Mix, Out, Pan2, LPF, HPF, FreeVerb, DelayN, CombN, Impulse, Dust, Pbind, Pseq, Prand, Pmono, Pdef, TempoClock.
+- No inventes funciones, clases ni metodos.
+- No uses archivos externos, ni Buffer.read, ni .delay().
+- No incluyas comentarios ni explicaciones.
+- Usa formato estandar ejemplo:
+(
+SynthDef(...).add;
+...
+Pbind(...).play;
+)
+El resultado debe ser expresivo y musicalmente coherente, no simple.
+"""
         chat_history[0] = {"role": "system", "content": system_msg}
         chat_history.append({"role": "user", "content": user_msg})
         print(f"==== MODO { mood } ==== " )
@@ -214,6 +230,9 @@ for message in pubsub.listen():
             #else :
             #    sc_code = "(" + sc_code
             #    sc_code = sc_code + ")"
+            sc_proc.stdin.write("s.freeAll; Pdef.all.do(_.stop); TempoClock.default.clear;\n")
+            sc_proc.stdin.flush()
+            time.sleep(3)
             sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
             
             print("==== Nuevo bloque SC ====")
