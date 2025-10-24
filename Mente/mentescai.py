@@ -198,7 +198,7 @@ for message in pubsub.listen():
         system_msg = f"Eres un DJ live coder en SuperCollider 3.10, capaz de generar texturas musicales con base en emociones. Estado actual: {mood}."
         user_msg = f"""
 Genera código SuperCollider (SC 3.10) con entre 5 y 7 SynthDef y patrones Pbind/Pseq/Prand
-que juntos expresen {mood_instruction}.
+que juntos expresen {mood_instruction} con efecto estereo.
 
 Restricciones:
 - Solo puedes usar: SynthDef, SinOsc, Saw, Pulse, LFPulse, Env, EnvGen, Mix, Out, Pan2, LPF, HPF, FreeVerb, DelayN, CombN, Impulse, Dust, Pbind, Pseq, Prand, Pmono, Pdef, TempoClock.
@@ -248,7 +248,7 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
             #    sc_code = sc_code + ")"
             sc_proc.stdin.write("s.freeAll; Pdef.all.do(_.stop); TempoClock.default.clear;\n")
             sc_proc.stdin.flush()
-            time.sleep(3)
+            time.sleep(1.5)
             sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
 
             print("==== Nuevo bloque SC ====")
