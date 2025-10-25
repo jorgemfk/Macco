@@ -11,14 +11,71 @@ from luma.oled.device import ssd1306
 from textwrap import wrap
 # libreras del sistema
 import psutil
+import threading
+
+# Contadores de error
+error_count = 0
+lock = threading.Lock()
+
+# Comando base con sus posibles argumentos
+SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
+
+def restart_sc():
+    """Reinicia SuperCollider y resetea contadores."""
+    global sc_proc, error_count
+    print(" Reiniciando SuperCollider...")
+    try:
+        sc_proc.kill()
+    except Exception as e:
+        print(f"Error al terminar proceso SC: {e}")
+
+    time.sleep(2)
+    sc_proc = subprocess.Popen(
+        SCLANG_CMD,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+    error_count = 0
+    print(" SuperCollider reiniciado.")
+
+def monitor_sc_output():
+    """Hilo que monitorea la salida de SuperCollider."""
+    global error_count
+    for line in sc_proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+
+        print(f"[SC] {line}")
+
+        if "FAILURE" in line:
+            print(" Detectado 'FAILURE', reiniciando SC.")
+            restart_sc()
+            continue
+
+        if "ERROR" in line:
+            with lock:
+                error_count += 1
+                print(f" Error detectado ({error_count}/3)")
+                if error_count >= 3:
+                    print(" 3 errores acumulados, reiniciando SC.")
+                    restart_sc()
 
 
 # ---- 1. Arrancar SuperCollider (sclang) ----
 sc_proc = subprocess.Popen(
-    ["pw-jack","sclang"],
+    SCLANG_CMD,
     stdin=subprocess.PIPE,
-    text=True
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,  # Captura errores también
+    text=True,
+    bufsize=1
 )
+# Lanzar hilo para monitorear salida de SC
+threading.Thread(target=monitor_sc_output, daemon=True).start()
 time.sleep(15)
 r = redis.Redis(host='localhost', port=6379, db=0)
 pubsub = r.pubsub()
