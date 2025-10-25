@@ -4,6 +4,8 @@ from openai import OpenAI
 import redis, json, time, datetime, os
 from collections import deque
 import copy
+import unicodedata
+import re
 
 class Vista:
     def __init__(self):
@@ -108,15 +110,15 @@ class Vista:
         return response.choices[0].message.content.strip()
 
     def _sanitize_text(self, text: str) -> str:
-        """Quita acentos y caracteres especiales."""
-        text = text.encode('utf-8').decode('unicode_escape')
-        replacements = {
-            '\u00e1': 'a', '\u00e9': 'e', '\u00ed': 'i', '\u00f3': 'o', '\u00fa': 'u',
-            '\u00c1': 'A', '\u00c9': 'E', '\u00cd': 'I', '\u00d3': 'O', '\u00da': 'U',
-            '\u00f1': 'n', '\u00d1': 'N', '\u00fc': 'u', '\u00dc': 'U',
-        }
-        for k, v in replacements.items():
-            text = text.replace(k, v)
+        """Quita acentos, tildes y caracteres no ASCII."""
+        # Normalizar texto (descompone á → a + ´)
+        nfkd_form = unicodedata.normalize('NFKD', text)
+        # Eliminar marcas diacríticas
+        text = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+        # Convertir ñ → n y Ñ → N si deseas evitar caracteres fuera de ASCII
+        text = text.replace("ñ", "n").replace("Ñ", "N")
+        # Opcional: eliminar cualquier carácter no imprimible o no ASCII
+        text = re.sub(r"[^A-Za-z0-9.,;:!?()\"' \n]", "", text)
         return text
 
     def _extract_emocion(self, respuesta):
@@ -131,7 +133,7 @@ class Vista:
         emocion_actual = self._extract_emocion(respuesta)
 
         if emocion_actual == self.ultima_emocion_publicada:
-            print(f"🔁 Misma emoción detectada ({emocion_actual}), no se publica en Redis.")
+            print(f" Misma emoción detectada ({emocion_actual}), no se publica en Redis.")
             return  # Evita publicaciones repetidas
 
         data = {
@@ -145,7 +147,7 @@ class Vista:
 
         self.r.publish("emociones", json.dumps(data, ensure_ascii=False))
         self.ultima_emocion_publicada = emocion_actual
-        print(f"📡 Publicado en Redis con emoción: {emocion_actual}")
+        print(f" Publicado en Redis con emoción: {emocion_actual}")
 
     # ------------------------------------------------------------
     # Servicio Flask
