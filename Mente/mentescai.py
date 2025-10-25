@@ -18,8 +18,8 @@ error_count = 0
 lock = threading.Lock()
 
 # Comando base con sus posibles argumentos
-SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
-
+#SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
+SCLANG_CMD = ["pw-jack","sclang"]
 def restart_sc():
     """Reinicia SuperCollider y resetea contadores."""
     global sc_proc, error_count
