@@ -118,7 +118,7 @@ class Vista:
         # Convertir ñ → n y Ñ → N si deseas evitar caracteres fuera de ASCII
         text = text.replace("ñ", "n").replace("Ñ", "N")
         # Opcional: eliminar cualquier carácter no imprimible o no ASCII
-        text = re.sub(r"[^A-Za-z0-9.,;:!?()\"' \n]", "", text)
+        #text = re.sub(r"[^A-Za-z0-9.,;:!?()\"' \n]", "", text)
         return text
 
     def _extract_emocion(self, respuesta):
