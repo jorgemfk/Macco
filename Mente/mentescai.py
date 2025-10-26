@@ -12,24 +12,21 @@ from textwrap import wrap
 # libreras del sistema
 import psutil
 import threading
-
-# Contadores de error
-error_count = 0
-lock = threading.Lock()
+import signal
 
 # Comando base con sus posibles argumentos
 #SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
 SCLANG_CMD = ["pw-jack","sclang"]
-def restart_sc():
-    """Reinicia SuperCollider y resetea contadores."""
-    global sc_proc, error_count
-    print(" Reiniciando SuperCollider...")
-    try:
-        sc_proc.kill()
-    except Exception as e:
-        print(f"Error al terminar proceso SC: {e}")
 
-    time.sleep(2)
+sc_proc = None
+error_count = 0
+monitor_thread = None
+lock = threading.Lock()
+
+def start_sc():
+    """Inicia el proceso SuperCollider y lanza el hilo monitor."""
+    global sc_proc, monitor_thread
+
     sc_proc = subprocess.Popen(
         SCLANG_CMD,
         stdin=subprocess.PIPE,
@@ -38,13 +35,43 @@ def restart_sc():
         text=True,
         bufsize=1
     )
+
+    # Lanzar hilo monitor ligado a este nuevo proceso
+    monitor_thread = threading.Thread(target=monitor_sc_output, daemon=True)
+    monitor_thread.start()
+    print(" SuperCollider iniciado.")
+
+def restart_sc():
+    """Reinicia SuperCollider limpiamente."""
+    global sc_proc, error_count, monitor_thread
+
+    print(" Reiniciando SuperCollider...")
+
+    try:
+        if sc_proc and sc_proc.poll() is None:
+            # Enviar SIGTERM y esperar cierre limpio
+            sc_proc.terminate()
+            try:
+                sc_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Si no se apaga, forzar
+                sc_proc.kill()
+    except Exception as e:
+        print(f"Error al cerrar SC: {e}")
+
     error_count = 0
-    print(" SuperCollider reiniciado.")
+    time.sleep(5)
+    start_sc()
+
 
 def monitor_sc_output():
-    """Hilo que monitorea la salida de SuperCollider."""
+    """Hilo que monitorea la salida de SuperCollider en el proceso actual."""
     global error_count
-    for line in sc_proc.stdout:
+    current_proc = sc_proc  # Captura proceso actual
+
+    for line in current_proc.stdout:
+        if current_proc.poll() is not None:
+            break  # Proceso terminó
         line = line.strip()
         if not line:
             continue
@@ -54,7 +81,7 @@ def monitor_sc_output():
         if "FAILURE" in line:
             print(" Detectado 'FAILURE', reiniciando SC.")
             restart_sc()
-            continue
+            break
 
         if "ERROR" in line:
             with lock:
@@ -63,20 +90,11 @@ def monitor_sc_output():
                 if error_count >= 3:
                     print(" 3 errores acumulados, reiniciando SC.")
                     restart_sc()
-
+                    break
 
 # ---- 1. Arrancar SuperCollider (sclang) ----
-sc_proc = subprocess.Popen(
-    SCLANG_CMD,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,  # Captura errores también
-    text=True,
-    bufsize=1
-)
-# Lanzar hilo para monitorear salida de SC
-threading.Thread(target=monitor_sc_output, daemon=True).start()
-time.sleep(15)
+start_sc()
+# ---- 1. subscripcion a redis ----
 r = redis.Redis(host='localhost', port=6379, db=0)
 pubsub = r.pubsub()
 pubsub.subscribe("emociones")
