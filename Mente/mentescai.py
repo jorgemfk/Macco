@@ -14,6 +14,7 @@ import psutil
 import threading
 import signal
 
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 # Comando base con sus posibles argumentos
 #SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
 SCLANG_CMD = ["pw-jack","sclang"]
@@ -78,7 +79,7 @@ def monitor_sc_output():
 
         print(f"[SC] {line}")
 
-        if "FAILURE" in line:
+        if "FAILURE" in line or "CRITICAL" in line:
             print(" Detectado 'FAILURE', reiniciando SC.")
             restart_sc()
             break
