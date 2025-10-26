@@ -91,12 +91,12 @@ class Vista:
             "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral]' "
             "(elige solo una de estas emociones). Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
             "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
-            "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider, "
+            "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider techno ambiental, "
             "mencionando ritmo, textura, instrumentos o tono.\n\n"
             "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
             "Ejemplo:\n"
-            "Siento Feliz, como si las notas saltaran en una pista de baile. (^_^)\n"
-            "Creare una sinfonia brillante con arpegios ascendentes y percusion ligera.\n\n"
+            "Siento Triste, como si si mi corazon se undiera en el olvido eterno. (U_U)\n"
+            "Creare una sinfonia dark ambient.\n\n"
             "Ahora genera tu respuesta."
         )
 

@@ -84,7 +84,7 @@ def monitor_sc_output():
             restart_sc()
             break
 
-        if "ERROR" in line:
+        if "ERROR" in line or "-> nil" in line:
             with lock:
                 error_count += 1
                 print(f" Error detectado ({error_count}/3)")
