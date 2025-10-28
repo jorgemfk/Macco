@@ -271,7 +271,7 @@ for message in pubsub.listen():
 
         #mood, mood_instruction = random.choice(moods)
         mostrar_info(mood)
-        system_msg = f"Eres un DJ live coder en SuperCollider 3.10, capaz de generar texturas musicales con base en emociones. Estado actual: {mood}."
+        system_msg = f"Eres un DJ live coder Eclectico en SuperCollider 3.10, capaz de generar texturas musicales con base en emociones. Estado actual: {mood}."
         user_msg = f"""
 Genera código SuperCollider (SC 3.10) con entre 5 y 7 SynthDef y patrones Pbind/Pseq/Prand
 que juntos expresen {mood_instruction} con efecto estereo.
@@ -302,7 +302,7 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
         )
 
         sc_code = response.choices[0].message.content.strip()
-        chat_history.append({"role": "assistant", "content": sc_code})
+        #chat_history.append({"role": "assistant", "content": sc_code})
 
         # Extraer bloque SC
         match = re.search(r"```[\w]*\n(.*?)```", sc_code, re.S)
