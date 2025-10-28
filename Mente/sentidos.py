@@ -88,14 +88,14 @@ class Vista:
             + "\n".join([f"{e}: {totals[e]}" for e in self.emociones])
             + "\n\n"
             "Debes responder con DOS enunciados unicos:\n"
-            "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral]' "
+            "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]' "
             "(elige solo una de estas emociones). Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
             "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
             "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider , "
             "mencionando ritmo, textura, instrumentos o tono y explicitamente el genero de acuerdo ala emocion por ejemplo Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, Miedo-dark_ambient, Sorpresa-Techno_industrial .\n\n"
             "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
             "Ejemplo:\n"
-            "Siento Triste, como si si mi corazon se undiera en el olvido eterno. (U_U)\n"
+            "Siento Tristeza, como si si mi corazon se undiera en el olvido eterno. (U_U)\n"
             "Creare una sinfonia dark wave con sonido melancolico y a menudo introspectivo, utilizando tonos menores y sintetizadores.\n\n"
             "Ahora genera tu respuesta."
         )

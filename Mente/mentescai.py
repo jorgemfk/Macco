@@ -228,21 +228,6 @@ chat_history = [
 
 passs = 1
 
-# Posibles estados de animo
-moods = [
-    ("Enojo", "ritmos percusivos intensos, distorsión, bajos saturados y tempos rápidos, uso de Saw o PulseOsc para agresividad"),
-    ("Asco", "texturas ruidosas, disonancias, filtros resonantes, sonidos ásperos y efectos glitch o ring modulation"),
-    ("Miedo", "ambiente oscuro con drones graves, reverberación profunda, tonos inestables y ruidos modulados lentamente"),
-    ("Feliz", "melodías brillantes y armónicas con ritmo animado, uso de Sine y Saw suaves, percusión ligera y arpegios ascendentes"),
-    ("Triste", "tempos lentos, acordes menores, pads etéreos con reverberación, uso de SinOsc y LPF para calidez melancolica"),
-    ("Sorpresa", "sonidos impredecibles, cambios abruptos de ritmo y tono, FM o Sample&Hold, percusiones irregulares"),
-    ("Neutral", "ritmo constante y equilibrado, timbres suaves, balance entre ruido y tono, estructura minimalista y repetitiva")
-]
-def get_mood_description(nombre):
-    for mood, desc in moods:
-        if mood.lower() == nombre.lower():
-            return desc
-    return "No se encontró ese mood."
 # inicializar oled?I2C1; direccion 0x3c
 device = ssd1306(port=1, address=0x3C)
 # ---- 3. Bucle generativo ----
