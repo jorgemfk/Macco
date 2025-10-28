@@ -188,7 +188,7 @@ class FaceEmotionApp(AIBase):
         logits = results[0][0]  # (1,7)
         exp_vals = np.exp(logits - np.max(logits))
         probs = exp_vals / np.sum(exp_vals)
-        emotion_labels = ["Enojo", "Asco", "Miedo", "Feliz", "Triste", "Sorpresa", "Neutral"]
+        emotion_labels = ["Enojo", "Asco", "Miedo", "Felicidad", "Tristeza", "Sorpresa", "Neutral"]
         emotion_id = int(np.argmax(probs))
         print("Probs:", probs, "->", emotion_labels[emotion_id])
         return emotion_labels[emotion_id]
@@ -240,7 +240,7 @@ class FaceEmotion:
                 text_x = x + w // 2 - len(emotion) * 8 // 2
                 text_y = max(0, y - 25)
                 pl.osd_img.draw_string(text_x, text_y, emotion,
-                                       color=(255,255,0,255), scale=2)
+                                       color=(255,255,0,255), scale=3)
                 # --- Contar emociones ---
                 resumen[emotion] = resumen.get(emotion, 0) + 1
             current_time = time.ticks_ms()

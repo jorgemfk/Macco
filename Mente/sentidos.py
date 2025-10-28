@@ -17,7 +17,7 @@ class Vista:
         self.last_request_time = None
 
         # --- Lista de emociones reconocidas ---
-        self.emociones = ["Enojo", "Asco", "Miedo", "Feliz", "Triste", "Sorpresa", "Neutral"]
+        self.emociones = ["Enojo", "Asco", "Miedo", "Felicidad", "Tristeza", "Sorpresa", "Neutral"]
 
         # --- Buffer para acumular las últimas 3 recepciones ---
         self.ultimas_tres = deque(maxlen=3)
@@ -91,12 +91,12 @@ class Vista:
             "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Feliz, Triste, Sorpresa, Neutral]' "
             "(elige solo una de estas emociones). Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
             "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
-            "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider techno ambiental, "
-            "mencionando ritmo, textura, instrumentos o tono.\n\n"
+            "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider , "
+            "mencionando ritmo, textura, instrumentos o tono y explicitamente el genero de acuerdo ala emocion por ejemplo Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, Miedo-dark_ambient, Sorpresa-Techno_industrial .\n\n"
             "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
             "Ejemplo:\n"
             "Siento Triste, como si si mi corazon se undiera en el olvido eterno. (U_U)\n"
-            "Creare una sinfonia dark ambient.\n\n"
+            "Creare una sinfonia dark wave con sonido melancolico y a menudo introspectivo, utilizando tonos menores y sintetizadores.\n\n"
             "Ahora genera tu respuesta."
         )
 
