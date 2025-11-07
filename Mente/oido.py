@@ -1,9 +1,16 @@
 from flask import Flask, request
 import openai, tempfile, base64, os
+import unicodedata
 
 app = Flask(__name__)
 
 # Configura tu clave de OpenAI
+def sanitize_text(text: str) -> str:
+    """Quita acentos, tildes y caracteres no ASCII."""
+    nfkd_form = unicodedata.normalize('NFKD', text)
+    text = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    text = text.replace("ñ", "n").replace("Ñ", "N")
+    return text
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -21,6 +28,7 @@ def upload():
         )
 
     texto = transcript.strip()
+    sanitize_text(texto)
     print("Transcripción:", texto)
     return texto
 
