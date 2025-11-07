@@ -1,35 +1,28 @@
-from flask import Flask, request, jsonify
-import base64, os
-from openai import OpenAI
+from flask import Flask, request
+import openai, tempfile, base64, os
 
 app = Flask(__name__)
-client = OpenAI(api_key="TU_API_KEY_DE_OPENAI")
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Configura tu clave de OpenAI
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    data = request.get_json()
-    filename = data["filename"]
-    filepath = os.path.join(UPLOAD_DIR, filename)
+    wav_path = tempfile.mktemp(suffix=".wav")
+    with open(wav_path, "wb") as f:
+        f.write(request.data)
+    print(f"Archivo recibido ({len(request.data)} bytes):", wav_path)
 
-    # Guardar el archivo WAV recibido
-    with open(filepath, "wb") as f:
-        f.write(base64.b64decode(data["data"]))
-    print(f"Archivo {filename} recibido y guardado en {filepath}")
-
-    # Enviar a OpenAI para transcripción
-    with open(filepath, "rb") as f:
-        transcript = client.audio.transcriptions.create(
+    # Enviar a OpenAI Whisper
+    with open(wav_path, "rb") as audio_file:
+        transcript = openai.audio.transcriptions.create(
             model="whisper-1",
-            file=f
+            file=audio_file,
+            response_format="text"
         )
 
-    texto = transcript.text
+    texto = transcript.strip()
     print("Transcripción:", texto)
-
-    return jsonify({"status": "ok", "text": texto})
+    return texto
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5821)
