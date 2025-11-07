@@ -14,7 +14,9 @@ SAMPLE_RATE = 16000
 RECORD_TIME = 4
 SAMPLE_POINTS = 2048
 WAV_CH = 2
-SOUND_THRESHOLD = 80  # Ajusta según tu entorno
+SOUND_THRESHOLD = 70
+
+LCD_W, LCD_H = 320, 240
 
 # ==== LCD ====
 lcd.init()
@@ -46,16 +48,15 @@ class wifi():
             spi=1
         )
 
-    def connect(ssid, pasw, max_retries=10):
+    def connect(ssid, pasw, max_retries=15):
         wifi.nic.connect(ssid, pasw)
-        for i in range(max_retries * 2):  # más intentos y más lentos
+        for i in range(max_retries):
             if wifi.nic.isconnected():
                 return True
-            time.sleep_ms(1000)
             print("Intento WiFi:", i + 1)
+            time.sleep_ms(1000)
         return False
 
-# ==== CONECTAR WIFI ====
 wifi.reset()
 if wifi.connect(SSID, PASW):
     lcd.clear(lcd.WHITE)
@@ -78,11 +79,11 @@ def rms(samples):
     return math.sqrt(sum_sq / (len(samples)//2))
 
 # ==== GRABAR AUDIO ====
+# ==== GRABAR ====
 def grabar_audio():
     recorder = audio.Audio(path="/sd/record3.wav", is_create=True, samplerate=SAMPLE_RATE)
     queue = []
     frame_cnt = RECORD_TIME * SAMPLE_RATE // SAMPLE_POINTS
-
     for i in range(frame_cnt):
         tmp = rx.record(SAMPLE_POINTS * WAV_CH)
         if len(queue) > 0:
@@ -93,6 +94,25 @@ def grabar_audio():
     recorder.finish()
     print("Grabación lista")
 
+# ==== DIBUJAR TEXTO CENTRADO ====
+def draw_centered_text(text):
+    """Dibuja texto centrado vertical y horizontalmente, con ajuste de línea."""
+    lcd.clear(lcd.WHITE)
+    lines = []
+    max_chars = 20
+    # dividir texto en líneas de máximo 20 caracteres
+    while len(text) > max_chars:
+        lines.append(text[:max_chars])
+        text = text[max_chars:]
+    lines.append(text)
+    # calcular posición vertical inicial
+    total_height = len(lines) * 20
+    y = (LCD_H - total_height) // 2
+    for line in lines:
+        x = (LCD_W - len(line) * 8) // 2  # 8 px por caracter aprox
+        lcd.draw_string(x, y, line, lcd.BLACK, lcd.WHITE)
+        y += 20
+
 # ==== ENVIAR ====
 def enviar_audio():
     FILENAME = "/sd/record3.wav"
@@ -101,7 +121,7 @@ def enviar_audio():
 
     with open(FILENAME, "rb") as f:
         s = socket.socket()
-        s.settimeout(10)  # Aumentamos timeout de conexión
+        s.settimeout(10)
         s.connect(socket.getaddrinfo(SERVER_IP, SERVER_PORT)[0][-1])
         header = (
             "POST /upload HTTP/1.1\r\n"
@@ -126,28 +146,20 @@ def enviar_audio():
         else:
             body = response_str
         texto = body.strip()
-        print("Texto:", texto)
-        lcd.clear(lcd.WHITE)
-        # dividir texto si es largo
-        lines = []
-        while len(texto) > 20:
-            lines.append(texto[:20])
-            texto = texto[20:]
-        lines.append(texto)
-        y = 10
-        for line in lines:
-            lcd.draw_string(10, y, line, lcd.BLACK, lcd.WHITE)
-            y += 20
+        print("Texto recibido:", texto)
+        draw_centered_text(texto)
         return texto
     except Exception as e:
         print("Error al decodificar respuesta:", e)
         lcd.clear(lcd.RED)
-        lcd.draw_string(10, 10, "Error al leer resp", lcd.WHITE, lcd.RED)
+        lcd.draw_string(10, 10, "Error respuesta", lcd.WHITE, lcd.RED)
         return None
 
 # ==== LOOP PRINCIPAL ====
+ultimo_texto = "Esperando sonido..."
 lcd.clear(lcd.WHITE)
-lcd.draw_string(10, 10, "Esperando sonido...", lcd.BLACK, lcd.WHITE)
+lcd.draw_string(10, 10, "Volumen: --", lcd.BLACK, lcd.WHITE)
+draw_centered_text(ultimo_texto)
 
 while True:
     audio_block = rx.record(SAMPLE_POINTS * WAV_CH)
@@ -155,24 +167,20 @@ while True:
     vol = rms(buf)
     print("Volumen:", int(vol))
 
-    # Mostrar volumen actual
-    lcd.clear(lcd.WHITE)
-    lcd.draw_string(10, 10, "Volumen: {}".format(int(vol)), lcd.BLACK, lcd.WHITE)
+    # Mostrar volumen arriba
+    lcd.draw_string(10, 10, "Volumen: {:3d} ".format(int(vol)), lcd.BLACK, lcd.WHITE)
 
     if vol > SOUND_THRESHOLD:
-        lcd.clear(lcd.YELLOW)
-        lcd.draw_string(10, 10, "Grabando...", lcd.BLACK, lcd.YELLOW)
+        lcd.draw_string(10, 30, "Grabando...", lcd.BLACK, lcd.WHITE)
         grabar_audio()
-        lcd.clear(lcd.BLUE)
-        lcd.draw_string(10, 10, "Enviando...", lcd.WHITE, lcd.BLUE)
+        lcd.draw_string(10, 30, "Enviando...   ", lcd.BLACK, lcd.WHITE)
         texto = enviar_audio()
-        lcd.clear(lcd.GREEN)
         if texto:
-            lcd.draw_string(10, 10, texto, lcd.BLACK, lcd.GREEN)
-        else:
-            lcd.draw_string(10, 10, "Sin texto", lcd.BLACK, lcd.GREEN)
+            ultimo_texto = texto
         time.sleep(3)
+        # Re-dibujar volumen + texto centrado
         lcd.clear(lcd.WHITE)
-        lcd.draw_string(10, 10, "Esperando sonido...", lcd.BLACK, lcd.WHITE)
+        lcd.draw_string(10, 10, "Volumen: {:3d}".format(int(vol)), lcd.BLACK, lcd.WHITE)
+        draw_centered_text(ultimo_texto)
 
     time.sleep_ms(200)
