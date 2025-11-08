@@ -8,6 +8,9 @@ import ustruct
 SSID = "INFINITUM47A4_2.4"
 PASW = "eFwN3s9VPP"
 SERVER_IP = "192.168.1.207"   # IP de tu Raspberry Pi
+#SSID = "casaMatamoros2G"
+#PASW = "arteyhospedaje2025"
+#SERVER_IP = "192.168.0.4"   # IP de tu Raspberry Pi
 SERVER_PORT = 5821
 
 SAMPLE_RATE = 16000
@@ -15,7 +18,7 @@ RECORD_TIME = 4
 SAMPLE_POINTS = 2048
 WAV_CH = 2
 SOUND_THRESHOLD = 70
-
+WAV_PATH = "/sd/record3.wav"
 LCD_W, LCD_H = 320, 240
 
 # ==== LCD ====
@@ -76,12 +79,16 @@ def rms(samples):
         if s >= 32768:
             s -= 65536
         sum_sq += s * s
-    return math.sqrt(sum_sq / (len(samples)//2))
+    val = math.sqrt(sum_sq / (len(samples)//2))
+    # Filtrado: ignora lecturas absurdamente grandes
+    if val > 500:
+        val = 5
+    return val
 
 # ==== GRABAR AUDIO ====
 # ==== GRABAR ====
 def grabar_audio():
-    recorder = audio.Audio(path="/sd/record3.wav", is_create=True, samplerate=SAMPLE_RATE)
+    recorder = audio.Audio(path=WAV_PATH, is_create=True, samplerate=SAMPLE_RATE)
     queue = []
     frame_cnt = RECORD_TIME * SAMPLE_RATE // SAMPLE_POINTS
     for i in range(frame_cnt):
@@ -110,12 +117,12 @@ def draw_centered_text(text):
     y = (LCD_H - total_height) // 2
     for line in lines:
         x = (LCD_W - len(line) * 8) // 2  # 8 px por caracter aprox
-        lcd.draw_string(x, y, line, lcd.BLACK, lcd.WHITE)
+        lcd.draw_string(x, y, line,  lcd.BLACK, lcd.WHITE)
         y += 20
 
 # ==== ENVIAR ====
 def enviar_audio():
-    FILENAME = "/sd/record3.wav"
+    FILENAME = WAV_PATH
     size = os.stat(FILENAME)[6]
     print("Enviando archivo de", size, "bytes")
 

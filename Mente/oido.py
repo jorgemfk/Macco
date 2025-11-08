@@ -28,7 +28,7 @@ def upload():
         )
 
     texto = transcript.strip()
-    sanitize_text(texto)
+    texto = sanitize_text(texto)
     print("Transcripción:", texto)
     return texto
 
