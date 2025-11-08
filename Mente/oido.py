@@ -3,7 +3,7 @@ import openai, tempfile, base64, os
 import unicodedata
 
 app = Flask(__name__)
-
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024 
 # Configura tu clave de OpenAI
 def sanitize_text(text: str) -> str:
     """Quita acentos, tildes y caracteres no ASCII."""
