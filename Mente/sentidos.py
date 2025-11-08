@@ -92,7 +92,8 @@ class Vista:
             "(elige solo una de estas emociones). Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
             "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
             "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider , "
-            "mencionando ritmo, textura, instrumentos o tono y explicitamente el genero de acuerdo ala emocion por ejemplo Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, Miedo-dark_ambient, Sorpresa-Techno_industrial .\n\n"
+            "mencionando ritmo, textura, instrumentos o tono"
+            #"y explicitamente el genero de acuerdo ala emocion por ejemplo Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, Miedo-dark_ambient, Sorpresa-Techno_industrial .\n\n"
             "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
             "Ejemplo:\n"
             "Siento Tristeza, como si si mi corazon se undiera en el olvido eterno. (U_U)\n"
@@ -137,6 +138,7 @@ class Vista:
             return  # Evita publicaciones repetidas
 
         data = {
+            "sentido": "vista",
             "fecha": record["fecha"],
             "ultima_actualizacion": record["ultima_actualizacion"],
             "emociones_diarias": record["emociones"],
