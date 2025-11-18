@@ -18,6 +18,112 @@ from machine import Pin
 import ujson
 import usocket
 import _thread
+from machine import I2C
+import time
+import ustruct
+
+#SERVO CONFIG
+
+
+
+class PCA9685:
+    def __init__(self, i2c, address=0x40):
+        self.i2c = i2c
+        self.address = address
+        self.reset()
+
+    def _write(self, address, value):
+        print(address)
+        print(value)
+        print("======")
+        self.i2c.writeto_mem(self.address, address, bytearray([value]))
+
+    def _read(self, address):
+        return self.i2c.readfrom_mem(self.address, address, 1)[0]
+
+    def reset(self):
+        self._write(0x00, 0x00) # Mode1
+
+    def freq(self, freq=None):
+        if freq is None:
+            return int(25000000.0 / 4096 / (self._read(0xfe) - 0.5))
+        prescale = int(25000000.0 / 4096.0 / freq + 0.5)
+        old_mode = self._read(0x00) # Mode 1
+        self._write(0x00, (old_mode & 0x7F) | 0x10) # Mode 1, sleep
+        self._write(0xfe, prescale) # Prescale
+        self._write(0x00, old_mode) # Mode 1
+        time.sleep_us(5)
+        self._write(0x00, old_mode | 0xa1) # Mode 1, autoincrement on
+
+    def pwm(self, index, on=None, off=None):
+        if on is None or off is None:
+            data = self.i2c.readfrom_mem(self.address, 0x06 + 4 * index, 4)
+            return ustruct.unpack('<HH', data)
+        data = ustruct.pack('<HH', on, off)
+        self.i2c.writeto_mem(self.address, 0x06 + 4 * index,  data)
+
+    def duty(self, index, value=None, invert=False):
+        if value is None:
+            pwm = self.pwm(index)
+            if pwm == (0, 4096):
+                value = 0
+            elif pwm == (4096, 0):
+                value = 4095
+            value = pwm[1]
+            if invert:
+                value = 4095 - value
+            return value
+        if not 0 <= value <= 4095:
+            raise ValueError("Out of range")
+        if invert:
+            value = 4095 - value
+        if value == 0:
+            self.pwm(index, 0, 4096)
+        elif value == 4095:
+            self.pwm(index, 4096, 0)
+        else:
+            self.pwm(index, 0, value)
+
+
+
+class Servos:
+    def __init__(self, i2c, address=0x40, freq=50, min_us=500, max_us=2500,
+                 degrees=180):
+        self.period = 1000000 / freq
+        self.min_duty = self._us2duty(min_us)
+        self.max_duty = self._us2duty(max_us)
+        self.degrees = degrees
+        self.freq = freq
+        self.pca9685 = PCA9685(i2c, address)
+        self.pca9685.freq(freq)
+
+    def _us2duty(self, value):
+        return int(4095 * value / self.period)
+
+    def position(self, index, degrees=None, radians=None, us=None, duty=None):
+        span = self.max_duty - self.min_duty
+        if degrees is not None:
+            duty = self.min_duty + span * degrees / self.degrees
+        elif radians is not None:
+            duty = self.min_duty + span * radians / math.radians(self.degrees)
+        elif us is not None:
+            duty = self._us2duty(us)
+        elif duty is not None:
+            pass
+        else:
+            return self.pca9685.duty(index)
+        duty = min(self.max_duty, max(self.min_duty, int(duty)))
+        self.pca9685.duty(index, duty)
+
+    def release(self, index):
+        self.pca9685.duty(index, 0)
+
+#构建I2C对象，根据自己开发板类型定义引脚
+#i2c1 = I2C(I2C.I2C0, mode=I2C.MODE_MASTER,scl=7, sda=6)
+i2c1 = I2C(2, scl = 11, sda = 12, freq = 100000, timeout = 1000)
+print(i2c1.scan())
+#构建16路舵机对象
+s=Servos(i2c1)
 
 # ==========================================================
 # red
@@ -47,8 +153,8 @@ def procesar_envios_pendientes():
 def enviar_emociones(resumen):
     try:
         data = ujson.dumps({"emociones": resumen})
-        #host = "192.168.1.224"
-        host = "192.168.0.200"
+        host = "192.168.1.207"
+        #host = "192.168.0.200"
         port = 5820
         path = "/emociones"
 
@@ -82,15 +188,16 @@ def WIFI_Connect():
 
         for i in range(10):
 
-            #wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
-            wlan.connect('Bait_F-02_1521', '1234567890')
+            wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
+            #wlan.connect('Bait_F-02_1521', '1234567890')
             if wlan.isconnected():
                 break
 
     if wlan.isconnected():
 
         print('connectado')
-
+        pl.osd_img.draw_string(0, 0, 'conectado',
+                               color=(255,255,0,255), scale=4)
 
         WIFI_LED.value(1)
 
@@ -111,7 +218,10 @@ def WIFI_Connect():
             time.sleep_ms(300)
 
         wlan.active(False)
-
+#calculo de coordenada
+# Función para mapear valores (equivalente a Arduino map())
+def map_value(x, in_min, in_max, out_min, out_max):
+    return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
 
 # ==========================================================
 # Clase de detección de rostros
@@ -196,6 +306,80 @@ class FaceEmotionApp(AIBase):
 # ==========================================================
 # Clase principal FaceEmotion (detección + emoción)
 # ==========================================================
+
+# GESTOS EMOCIONALES CON SERVOS 2, 3, 4
+def emotional_gesture(emotion):
+    """
+    emotion: string (Enojo, Asco, Miedo...)
+    s: controlador de servos (como el que ya usas con s.position(channel, angle))
+    """
+
+    # Gestos predefinidos para cada emoción
+    if emotion == "Enojo":
+        # Movimientos bruscos, tensos
+        s.position(2, 40)   # hombro se eleva
+        s.position(3, 20)   # codo rígido
+        s.position(4, 10)   # muñeca cerrada
+        time.sleep(0.2)
+        s.position(4, 20)
+        time.sleep(0.15)
+
+    elif emotion == "Asco":
+        # Retraer el brazo como alejándose
+        s.position(2, 10)
+        s.position(3, 70)
+        s.position(4, 30)
+        time.sleep(0.3)
+
+    elif emotion == "Miedo":
+        # Temblor ligero
+        for i in range(3):
+            s.position(2, 60)
+            s.position(3, 40)
+            s.position(4, 50)
+            time.sleep(0.1)
+            s.position(2, 55)
+            s.position(3, 45)
+            s.position(4, 55)
+            time.sleep(0.1)
+
+    elif emotion == "Felicidad":
+        # Levantar brazo como saludo/alegría
+        s.position(2, 80)
+        s.position(3, 30)
+        s.position(4, 80)
+        time.sleep(0.2)
+        # Pequeño movimiento suave
+        for i in range(2):
+            s.position(4, 70)
+            time.sleep(0.15)
+            s.position(4, 80)
+            time.sleep(0.15)
+
+    elif emotion == "Tristeza":
+        # Brazos caídos y lentos
+        s.position(2, 20)
+        s.position(3, 80)
+        s.position(4, 40)
+        time.sleep(0.4)
+
+    elif emotion == "Sorpresa":
+        # Brazos levantados rápido
+        s.position(2, 90)
+        s.position(3, 20)
+        s.position(4, 90)
+        time.sleep(0.15)
+        # Movimiento de rebote
+        s.position(2, 75)
+        time.sleep(0.15)
+
+    elif emotion == "Neutral":
+        # Posición de reposo
+        s.position(2, 50)
+        s.position(3, 50)
+        s.position(4, 50)
+        time.sleep(0.2)
+
 class FaceEmotion:
     def __init__(self, face_det_kmodel, face_emotion_kmodel,
                  det_input_size, emotion_input_size, anchors,
@@ -227,8 +411,35 @@ class FaceEmotion:
         pl.osd_img.clear()
         if dets:
             resumen = {}
+            cara=True
             for det, emotion in zip(dets, emotions):
                 x, y, w, h = map(lambda x: int(round(x, 0)), det[:4])
+                #donde esta la 1er cara
+                if cara:
+                    half_width = w // 2
+                    half_height = h // 2
+
+                    # Centro del rostro en la imagen
+                    face_center_pan = x + half_width
+                    face_center_tilt = y + half_height
+
+                    # Convertir coordenadas a ángulos de servo
+                    My_centerx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 0, 90)
+                    My_centery = map_value(face_center_tilt, half_height,  self.rgb888p_size[1]- half_height, 45, 0)
+
+                    print("X {}".format(My_centerx))
+                    print("Y {}".format(My_centery))
+                    print("F {}".format(self.display_size[0]))
+                    print("FW {}".format(self.rgb888p_size[0]))
+                    print("W {}".format(self.display_size[1]))
+                    print("WF {}".format(self.rgb888p_size[1]))
+                    print(self.display_size[0] // self.rgb888p_size[0])
+                    # Mover servos
+                    s.position(0, My_centerx)
+                    s.position(1, My_centery)
+                    emotional_gesture(emotion)
+                    time.sleep(0.06 )
+                    cara = False
                 x = x * self.display_size[0] // self.rgb888p_size[0]
                 y = y * self.display_size[1] // self.rgb888p_size[1]
                 w = w * self.display_size[0] // self.rgb888p_size[0]
@@ -240,9 +451,10 @@ class FaceEmotion:
                 text_x = x + w // 2 - len(emotion) * 8 // 2
                 text_y = max(0, y - 25)
                 pl.osd_img.draw_string(text_x, text_y, emotion,
-                                       color=(255,255,0,255), scale=3)
+                                       color=(255,255,0,255), scale=4)
                 # --- Contar emociones ---
                 resumen[emotion] = resumen.get(emotion, 0) + 1
+
             current_time = time.ticks_ms()
             tiempo_desde_ultimo = time.ticks_diff(current_time, self.last_send_time)
 

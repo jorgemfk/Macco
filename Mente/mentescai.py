@@ -14,10 +14,10 @@ import psutil
 import threading
 import signal
 
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
+#os.environ["QT_QPA_PLATFORM"] = "offscreen"
 # Comando base con sus posibles argumentos
-#SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
-SCLANG_CMD = ["pw-jack","sclang"]
+SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
+#SCLANG_CMD = ["pw-jack","sclang"]
 
 sc_proc = None
 error_count = 0
@@ -229,7 +229,7 @@ chat_history = [
 passs = 1
 
 # inicializar oled?I2C1; direccion 0x3c
-device = ssd1306(port=1, address=0x3C)
+#device = ssd1306(port=1, address=0x3C)
 # ---- 3. Bucle generativo ----
 for message in pubsub.listen():
     if message["type"] == "message":
@@ -255,7 +255,7 @@ for message in pubsub.listen():
         mood_instruction = second_sentence
 
         #mood, mood_instruction = random.choice(moods)
-        mostrar_info(mood)
+        #mostrar_info(mood)
         system_msg = f"Eres un DJ live coder Eclectico en SuperCollider 3.10, capaz de generar texturas musicales con base en emociones. Estado actual: {mood}."
         user_msg = f"""
 Genera código SuperCollider (SC 3.10) con entre 5 y 7 SynthDef y patrones Pbind/Pseq/Prand
@@ -264,7 +264,7 @@ que juntos expresen {mood_instruction} con efecto estereo.
 Restricciones:
 - Solo puedes usar: SynthDef, SinOsc, Saw, Pulse, LFPulse, Env, EnvGen, Mix, Out, Pan2, LPF, HPF, FreeVerb, DelayN, CombN, Impulse, Dust, Pbind, Pseq, Prand, Pmono, Pdef, TempoClock.
 - No inventes funciones, clases ni metodos.
-- No uses archivos externos, ni Buffer.read, ni .delay().
+- No uses  .delay().
 - No incluyas comentarios ni explicaciones.
 - Usa formato estandar ejemplo:
 (
