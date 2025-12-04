@@ -5,9 +5,9 @@ import network
 import ustruct
 
 # ========== CONFIGURACIÓN ==========
-SSID = "INFINITUM47A4_2.4"
-PASW = "eFwN3s9VPP"
-SERVER_IP = "192.168.1.207"   # IP de tu Raspberry Pi
+SSID = "Bait_F-02_1521"
+PASW = "1234567890"
+SERVER_IP = "192.168.0.200"   # IP de tu Raspberry Pi
 #SSID = "casaMatamoros2G"
 #PASW = "arteyhospedaje2025"
 #SERVER_IP = "192.168.0.4"   # IP de tu Raspberry Pi
@@ -136,13 +136,16 @@ def enviar_audio():
             "Content-Type: application/octet-stream\r\n"
             "Content-Length: {}\r\n\r\n"
         ).format(SERVER_IP, size)
-        s.send(header)
-        while True:
-            chunk = f.read(512)
-            if not chunk:
-                break
-            s.send(chunk)
-        response = s.recv(1024)
+        try:
+            s.send(header)
+            while True:
+                chunk = f.read(512)
+                if not chunk:
+                    break
+                s.send(chunk)
+            response = s.recv(1024)
+        except Exception as e:
+            lcd.draw_string(10, 10, "Error Envio", lcd.WHITE, lcd.RED)
         s.close()
 
     # === Limpiar respuesta HTTP ===

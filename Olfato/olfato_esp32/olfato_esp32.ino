@@ -2,7 +2,7 @@
 #include <U8g2lib.h>
 
 #define MQ3_PIN 34
-#define CALIBRACIONES 200   // muestras para calibrar
+#define CALIBRACIONES 1000   // muestras para calibrar
 
 U8G2_SSD1309_128X64_NONAME0_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
@@ -10,7 +10,7 @@ float filtro = 0;
 float base = 0;   // valor de MQ-3 en aire limpio
 
 void calibrarSensor() {
-  Serial.println("Calibrando MQ-3 (5 segundos)...");
+  Serial.println("Calibrando MQ-3 (25 segundos)...");
   long suma = 0;
 
   for (int i = 0; i < CALIBRACIONES; i++) {
@@ -30,10 +30,10 @@ float leerAlcoholPct() {
   filtro = 0.90 * filtro + 0.10 * raw;
 
   float pct = (filtro - base) / (4095.0 - base) * 100.0;
-
+  Serial.println(pct);
   if (pct < 0) pct = 0;
   if (pct > 100) pct = 100;
-
+  
   return pct;
 }
 
@@ -48,8 +48,11 @@ void setup() {
   Wire.begin(21, 22);
   u8g2.begin();
   u8g2.setContrast(255);
-
+   u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x12_tf);
+  u8g2.drawStr(0, 10, "Calibrando MQ3...");
   calibrarSensor(); // <-- NUEVO
+
 }
 
 void loop() {
@@ -82,7 +85,7 @@ void loop() {
   Serial.print(" | % alcohol: ");
   Serial.print(pct);
   Serial.print(" | mg/L: ");
-  Serial.println(mgL);
+  Serial.println(mgL,3);
 
   delay(200);
 }
