@@ -1,6 +1,12 @@
 #include <Wire.h>
 #include <U8g2lib.h>
 
+// Lectura RAW del sensor MQ135 en Arduino Uno
+
+const int MQ135_PIN = 39;      // Pin analógico donde está conectado el sensor
+const int NUM_LECTURAS_MQ135 = 100;  // Para promediar lecturas y reducir ruido
+
+
 #define MQ3_PIN 34
 #define CALIBRACIONES 1000   // muestras para calibrar
 
@@ -48,9 +54,11 @@ void setup() {
   Wire.begin(21, 22);
   u8g2.begin();
   u8g2.setContrast(255);
-   u8g2.clearBuffer();
+  //
+  u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x12_tf);
   u8g2.drawStr(0, 10, "Calibrando MQ3...");
+  u8g2.sendBuffer();
   calibrarSensor(); // <-- NUEVO
 
 }
@@ -60,10 +68,26 @@ void loop() {
   float mgL = estimarMgL(pct);
   String estado = (mgL > 0.039) ? "NO CONDUCIR" : "PERMITIDO";
 
+  //MQ135
+    long suma_135 = 0;
+
+  // Promediar para suavizar ruido
+  for(int i = 0; i < NUM_LECTURAS_MQ135; i++) {
+    suma_135 += analogRead(MQ135_PIN);
+    delay(5);
+  }
+
+  int rawValue = suma_135 / NUM_LECTURAS_MQ135;
+
+  // Imprimir RAW
+  Serial.print("RAW MQ135: ");
+  Serial.println(rawValue);
   // OLED
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x12_tf);
-  u8g2.drawStr(0, 10, "Medidor Alcohol MQ3");
+  char l0[32];
+  sprintf(l0, "Calidad: %d ", rawValue);
+  u8g2.drawStr(0, 10, l0);
 
   char l1[32];
   sprintf(l1, "Alcohol: %.1f %%", pct);
