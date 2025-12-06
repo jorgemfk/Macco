@@ -122,12 +122,17 @@ void loop() {
   float ratio = rs / R0_135;
   float mg135 = mg135_from_ratio(ratio);
 
-  int delta = abs(raw135 - raw135_prev);
-  raw135_prev = raw135;
+int delta = raw135 - raw135_prev;
+raw135_prev = raw135;
 
-  String nivelCont;
-  if (delta > UMBRAL_DELTA) nivelCont = "Rapido";
-  else nivelCont = "Estable";
+String nivelCont;
+
+if (abs(delta) > UMBRAL_DELTA) {
+    if (delta > 0)  nivelCont = "Rapido +";   // subió rápido
+    else            nivelCont = "Rapido -";   // bajó rápido
+} else {
+    nivelCont = "Estable";
+}
 
   // ---------------- BARRA DE CONTAMINACIÓN ----------------
   int barWidth = map(raw135, 200, 3500, 0, 120);
