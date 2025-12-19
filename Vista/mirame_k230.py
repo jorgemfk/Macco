@@ -118,12 +118,47 @@ class Servos:
     def release(self, index):
         self.pca9685.duty(index, 0)
 
-#构建I2C对象，根据自己开发板类型定义引脚
 #i2c1 = I2C(I2C.I2C0, mode=I2C.MODE_MASTER,scl=7, sda=6)
 i2c1 = I2C(2, scl = 11, sda = 12, freq = 100000, timeout = 1000)
 print(i2c1.scan())
-#构建16路舵机对象
+
 s=Servos(i2c1)
+
+# ===============================
+# SERVO 5 - ESTADO
+# ===============================
+SERVO5_IDLE = 0
+SERVO5_ON = 1
+SERVO5_OFF = 2
+
+servo5_state = SERVO5_IDLE
+servo5_timer = 0
+def update_servo5(face_detected):
+    global servo5_state, servo5_timer
+
+    now = time.ticks_ms()
+
+    # Estado IDLE → aparece cara
+    if servo5_state == SERVO5_IDLE:
+        if face_detected:
+            s.position(5, 180)
+            servo5_timer = now
+            servo5_state = SERVO5_ON
+            print("[SERVO5] ON 180°")
+
+    # Estado ON → esperar 5 s
+    elif servo5_state == SERVO5_ON:
+        if time.ticks_diff(now, servo5_timer) >= 5000:
+            s.position(5, 0)
+            servo5_timer = now
+            servo5_state = SERVO5_OFF
+            print("[SERVO5] OFF 0°")
+
+    # Estado OFF → esperar 5 s antes de rearmar
+    elif servo5_state == SERVO5_OFF:
+        if time.ticks_diff(now, servo5_timer) >= 5000:
+            servo5_state = SERVO5_IDLE
+            print("[SERVO5] READY")
 
 # ==========================================================
 # red
@@ -153,8 +188,8 @@ def procesar_envios_pendientes():
 def enviar_emociones(resumen):
     try:
         data = ujson.dumps({"emociones": resumen})
-        host = "192.168.1.207"
-        #host = "192.168.0.200"
+        #host = "192.168.1.207"
+        host = "192.168.0.200"
         port = 5820
         path = "/emociones"
 
@@ -188,8 +223,8 @@ def WIFI_Connect():
 
         for i in range(10):
 
-            wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
-            #wlan.connect('Bait_F-02_1521', '1234567890')
+            #wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
+            wlan.connect('Bait_F-02_1521', '1234567890')
             if wlan.isconnected():
                 break
 
@@ -219,9 +254,20 @@ def WIFI_Connect():
 
         wlan.active(False)
 #calculo de coordenada
-# Función para mapear valores (equivalente a Arduino map())
+# Función para mapear valores
 def map_value(x, in_min, in_max, out_min, out_max):
     return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
+
+
+EMOTION_COLORS = {
+    "Enojo":      (255,   0,   0, 255),
+    "Asco":       (120, 200,  60, 255),
+    "Miedo":      (40,   80, 160, 255),
+    "Felicidad":  (255, 220,   0, 255),
+    "Tristeza":   (100, 130, 160, 255),
+    "Sorpresa":   (220,  80, 200, 255),
+    "Neutral":    (200, 200, 200, 255),
+}
 
 # ==========================================================
 # Clase de detección de rostros
@@ -307,78 +353,79 @@ class FaceEmotionApp(AIBase):
 # Clase principal FaceEmotion (detección + emoción)
 # ==========================================================
 
-# GESTOS EMOCIONALES CON SERVOS 2, 3, 4
-def emotional_gesture(emotion):
-    """
-    emotion: string (Enojo, Asco, Miedo...)
-    s: controlador de servos (como el que ya usas con s.position(channel, angle))
-    """
+# GESTOS EMOCIONALES CON SERVOS 3,4
+gesture_queue = []
+gesture_active = False
+gesture_timer = 0
+GESTURE_STEP_DELAY = 40  # ms entre pasos
 
-    # Gestos predefinidos para cada emoción
-    if emotion == "Enojo":
-        # Movimientos bruscos, tensos
-        s.position(2, 40)   # hombro se eleva
-        s.position(3, 20)   # codo rígido
-        s.position(4, 10)   # muñeca cerrada
-        time.sleep(0.2)
-        s.position(4, 20)
-        time.sleep(0.15)
+def enqueue_smooth_move(ch, start, end, steps=6):
+    delta = (end - start) / steps
+    pos = start
+    for _ in range(steps):
+        pos += delta
+        gesture_queue.append((ch, int(pos)))
 
-    elif emotion == "Asco":
-        # Retraer el brazo como alejándose
-        s.position(2, 10)
-        s.position(3, 70)
-        s.position(4, 30)
-        time.sleep(0.3)
 
-    elif emotion == "Miedo":
-        # Temblor ligero
-        for i in range(3):
-            s.position(2, 60)
-            s.position(3, 40)
-            s.position(4, 50)
-            time.sleep(0.1)
-            s.position(2, 55)
-            s.position(3, 45)
-            s.position(4, 55)
-            time.sleep(0.1)
+SERVO_EJE_Y   = 3   # movimiento vertical (0–40°)
+SERVO_CABEZA  = 4   # head tilt tipo perro (0–60°)
+# Posiciones neutras
+NEUTRO_Y     = 20
+NEUTRO_TILT  = 30
 
-    elif emotion == "Felicidad":
-        # Levantar brazo como saludo/alegría
-        s.position(2, 80)
-        s.position(3, 30)
-        s.position(4, 80)
-        time.sleep(0.2)
-        # Pequeño movimiento suave
-        for i in range(2):
-            s.position(4, 70)
-            time.sleep(0.15)
-            s.position(4, 80)
-            time.sleep(0.15)
+def schedule_emotional_gesture(emotion):
+    global gesture_active
+
+    if gesture_active:
+        return  # evita solapamiento
+
+    gesture_active = True
+
+    # volver a neutro
+    enqueue_smooth_move(SERVO_EJE_Y, s.position(SERVO_EJE_Y), NEUTRO_Y)
+    enqueue_smooth_move(SERVO_CABEZA, s.position(SERVO_CABEZA), NEUTRO_TILT)
+
+    if emotion == "Felicidad":
+        for _ in range(2):
+            enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 45, 4)
+            enqueue_smooth_move(SERVO_CABEZA, 45, 20, 4)
+        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 28, 5)
 
     elif emotion == "Tristeza":
-        # Brazos caídos y lentos
-        s.position(2, 20)
-        s.position(3, 80)
-        s.position(4, 40)
-        time.sleep(0.4)
+        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 8, 8)
+        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 18, 6)
+
+    elif emotion == "Miedo":
+        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 6, 6)
+        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 15, 6)
+
+    elif emotion == "Enojo":
+        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 32, 4)
+        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 35, 3)
 
     elif emotion == "Sorpresa":
-        # Brazos levantados rápido
-        s.position(2, 90)
-        s.position(3, 20)
-        s.position(4, 90)
-        time.sleep(0.15)
-        # Movimiento de rebote
-        s.position(2, 75)
-        time.sleep(0.15)
+        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 36, 3)
+        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 50, 3)
+
+    elif emotion == "Asco":
+        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 10, 6)
 
     elif emotion == "Neutral":
-        # Posición de reposo
-        s.position(2, 50)
-        s.position(3, 50)
-        s.position(4, 50)
-        time.sleep(0.2)
+        enqueue_smooth_move(SERVO_EJE_Y, s.position(SERVO_EJE_Y), NEUTRO_Y, 6)
+        enqueue_smooth_move(SERVO_CABEZA, s.position(SERVO_CABEZA), NEUTRO_TILT, 6)
+
+def update_gesture_scheduler():
+    global gesture_timer, gesture_active
+
+    if not gesture_queue:
+        gesture_active = False
+        return
+
+    now = time.ticks_ms()
+    if time.ticks_diff(now, gesture_timer) >= GESTURE_STEP_DELAY:
+        ch, pos = gesture_queue.pop(0)
+        s.position(ch, pos)
+        gesture_timer = now
 
 class FaceEmotion:
     def __init__(self, face_det_kmodel, face_emotion_kmodel,
@@ -409,6 +456,8 @@ class FaceEmotion:
 
     def draw_result(self, pl, dets, emotions):
         pl.osd_img.clear()
+        update_servo5(face_detected = bool(dets))
+        update_gesture_scheduler()
         if dets:
             resumen = {}
             cara=True
@@ -424,8 +473,12 @@ class FaceEmotion:
                     face_center_tilt = y + half_height
 
                     # Convertir coordenadas a ángulos de servo
-                    My_centerx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 0, 90)
-                    My_centery = map_value(face_center_tilt, half_height,  self.rgb888p_size[1]- half_height, 45, 0)
+                    My_centerx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 120, 0)
+                    My_centerxx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 90, 0)
+                    My_centerxr = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 40, 0)
+
+                    My_centery = map_value(face_center_tilt, half_height,  self.rgb888p_size[1]- half_height, 50, 0)
+                    My_centerz = map_value(face_center_tilt, half_height,  self.rgb888p_size[1]- half_height, 0, 30)
 
                     print("X {}".format(My_centerx))
                     print("Y {}".format(My_centery))
@@ -437,8 +490,13 @@ class FaceEmotion:
                     # Mover servos
                     s.position(0, My_centerx)
                     s.position(1, My_centery)
-                    emotional_gesture(emotion)
+                    #time.sleep(0.06 )
+                    s.position(2,  My_centerz)
+                    #s.position(2, My_centerz)
+                    #s.position(3, My_centerxx)
+                    #s.position(4, My_centerxr)
                     time.sleep(0.06 )
+                    schedule_emotional_gesture(emotion)
                     cara = False
                 x = x * self.display_size[0] // self.rgb888p_size[0]
                 y = y * self.display_size[1] // self.rgb888p_size[1]
@@ -446,7 +504,8 @@ class FaceEmotion:
                 h = h * self.display_size[1] // self.rgb888p_size[1]
 
                 # Rectángulo del rostro
-                pl.osd_img.draw_rectangle(x, y, w, h, color=(255, 0, 0, 255), thickness=2)
+                color = EMOTION_COLORS.get(emotion, (255,255,255,255))
+                pl.osd_img.draw_rectangle(x, y, w, h, color=color, thickness=2)
                 # Texto centrado arriba
                 text_x = x + w // 2 - len(emotion) * 8 // 2
                 text_y = max(0, y - 25)
@@ -495,22 +554,24 @@ if __name__=="__main__":
     pl = PipeLine(rgb888p_size=rgb888p_size,
                   display_size=display_size,
                   display_mode=display_mode)
-    pl.create()
+
+    pl.create(hmirror=True,   # espejo
+              vflip=False )
     display_size = pl.get_display_size()
 
     fe = FaceEmotion(face_det_kmodel_path, face_emotion_kmodel_path,
                      face_det_input_size, emotion_input_size, anchors,
                      confidence_threshold, nms_threshold,
                      rgb888p_size, display_size)
-    WIFI_Connect()
+    #WIFI_Connect()
 
     while True:
         with ScopedTiming("total",1):
-            img = pl.get_frame()                # Captura frame
+            img = pl.get_frame()                # Captura la frame
             dets, emotions = fe.run(img)        # Inferencia
             fe.draw_result(pl, dets, emotions)  # Dibuja resultados
             pl.show_image()                     # Muestra en pantalla
-            procesar_envios_pendientes()
+            #procesar_envios_pendientes()
             gc.collect()
 
     fe.face_det.deinit()
