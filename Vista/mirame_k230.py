@@ -357,9 +357,23 @@ class FaceEmotionApp(AIBase):
 gesture_queue = []
 gesture_active = False
 gesture_timer = 0
-GESTURE_STEP_DELAY = 40  # ms entre pasos
+gesture_step_delay = 40  # dinamico
 
-def enqueue_smooth_move(ch, start, end, steps=6):
+def update_gesture_scheduler():
+    global gesture_timer, gesture_active
+
+    if not gesture_queue:
+        gesture_active = False
+        return
+
+    now = time.ticks_ms()
+    if time.ticks_diff(now, gesture_timer) >= gesture_step_delay:
+        ch, pos = gesture_queue.pop(0)
+        s.position(ch, pos)
+        gesture_timer = now
+
+
+def enqueue_move(ch, start, end, steps):
     delta = (end - start) / steps
     pos = start
     for _ in range(steps):
@@ -374,58 +388,88 @@ NEUTRO_Y     = 20
 NEUTRO_TILT  = 30
 
 def schedule_emotional_gesture(emotion):
-    global gesture_active
+    global gesture_active, gesture_step_delay
 
     if gesture_active:
-        return  # evita solapamiento
+        return
 
     gesture_active = True
 
-    # volver a neutro
-    enqueue_smooth_move(SERVO_EJE_Y, s.position(SERVO_EJE_Y), NEUTRO_Y)
-    enqueue_smooth_move(SERVO_CABEZA, s.position(SERVO_CABEZA), NEUTRO_TILT)
+    # ===== VALORES BASE =====
+    y0 = s.position(SERVO_EJE_Y)
+    t0 = s.position(SERVO_CABEZA)
 
+    # =========================
     if emotion == "Felicidad":
+        gesture_step_delay = 28   # rápido, fluido
+
+        # head tilt amplio y rítmico
         for _ in range(2):
-            enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 45, 4)
-            enqueue_smooth_move(SERVO_CABEZA, 45, 20, 4)
-        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 28, 5)
+            enqueue_move(SERVO_CABEZA, t0, 50, 5)
+            enqueue_move(SERVO_CABEZA, 50, 25, 5)
 
+        # leve elevación de eje Y
+        enqueue_move(SERVO_EJE_Y, y0, 32, 6)
+
+    # =========================
     elif emotion == "Tristeza":
-        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 8, 8)
-        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 18, 6)
+        gesture_step_delay = 70   # lento, pesado
 
+        # caída progresiva
+        enqueue_move(SERVO_EJE_Y, y0, 6, 10)
+        enqueue_move(SERVO_CABEZA, t0, 18, 8)
+
+    # =========================
     elif emotion == "Miedo":
-        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 6, 6)
-        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 15, 6)
+        gesture_step_delay = 25   # nervioso
 
+        # retracción rápida
+        enqueue_move(SERVO_EJE_Y, y0, 4, 6)
+        enqueue_move(SERVO_CABEZA, t0, 12, 6)
+
+        # temblor corto
+        for _ in range(3):
+            enqueue_move(SERVO_CABEZA, 12, 18, 2)
+            enqueue_move(SERVO_CABEZA, 18, 12, 2)
+
+    # =========================
     elif emotion == "Enojo":
-        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 32, 4)
-        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 35, 3)
+        gesture_step_delay = 20   # brusco
 
+        # golpe hacia arriba
+        enqueue_move(SERVO_EJE_Y, y0, 38, 4)
+        enqueue_move(SERVO_CABEZA, t0, 35, 3)
+
+        # micro sacudida final
+        enqueue_move(SERVO_CABEZA, 35, 30, 2)
+
+    # =========================
     elif emotion == "Sorpresa":
-        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 36, 3)
-        enqueue_smooth_move(SERVO_CABEZA, NEUTRO_TILT, 50, 3)
+        gesture_step_delay = 15   # muy rápido
 
+        # apertura súbita
+        enqueue_move(SERVO_EJE_Y, y0, 42, 3)
+        enqueue_move(SERVO_CABEZA, t0, 55, 3)
+
+        # freeze breve
+        enqueue_move(SERVO_CABEZA, 55, 55, 3)
+
+    # =========================
     elif emotion == "Asco":
-        enqueue_smooth_move(SERVO_EJE_Y, NEUTRO_Y, 10, 6)
+        gesture_step_delay = 45   # irregular
 
+        # retiro + giro evasivo
+        enqueue_move(SERVO_EJE_Y, y0, 10, 6)
+        enqueue_move(SERVO_CABEZA, t0, 48, 4)
+        enqueue_move(SERVO_CABEZA, 48, 22, 4)
+
+    # =========================
     elif emotion == "Neutral":
-        enqueue_smooth_move(SERVO_EJE_Y, s.position(SERVO_EJE_Y), NEUTRO_Y, 6)
-        enqueue_smooth_move(SERVO_CABEZA, s.position(SERVO_CABEZA), NEUTRO_TILT, 6)
+        gesture_step_delay = 60   # respirado
 
-def update_gesture_scheduler():
-    global gesture_timer, gesture_active
+        enqueue_move(SERVO_EJE_Y, y0, NEUTRO_Y, 8)
+        enqueue_move(SERVO_CABEZA, t0, NEUTRO_TILT, 8)
 
-    if not gesture_queue:
-        gesture_active = False
-        return
-
-    now = time.ticks_ms()
-    if time.ticks_diff(now, gesture_timer) >= GESTURE_STEP_DELAY:
-        ch, pos = gesture_queue.pop(0)
-        s.position(ch, pos)
-        gesture_timer = now
 
 class FaceEmotion:
     def __init__(self, face_det_kmodel, face_emotion_kmodel,

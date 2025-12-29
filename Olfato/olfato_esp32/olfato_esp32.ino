@@ -1,5 +1,14 @@
 #include <Wire.h>
 #include <U8g2lib.h>
+#include <ESP32Servo.h>
+
+// =======================
+// ====== SERVO CONFIG ===
+// =======================
+#define SERVO_PIN 26
+Servo servoCont;
+int estadoServoPrev = -1; 
+// 0 = Estable, 1 = Rapido +, 2 = Rapido -
 
 // =======================
 // ====== MQ135 CONFIG ====
@@ -79,12 +88,15 @@ void calibrarMQ135() {
   R0_135 = rs / 3.6;
 }
 
-
 // =======================
 // ======== SETUP =========
 // =======================
 void setup() {
   Serial.begin(115200);
+
+  // Servo
+  servoCont.attach(SERVO_PIN);
+  servoCont.write(0); // posición inicial
 
   Wire.begin(21, 22);
   u8g2.begin();
@@ -106,9 +118,7 @@ void loop() {
   // ---------------- MQ3 ----------------
   float pct = leerAlcoholPct();
   float mgL = estimarMgL(pct);
-
   String estado = (mgL > 0.039) ? "NO CONDUCIR" : "PERMITIDO";
-
 
   // ---------------- MQ135 ----------------
   long suma135 = 0;
@@ -122,23 +132,37 @@ void loop() {
   float ratio = rs / R0_135;
   float mg135 = mg135_from_ratio(ratio);
 
-int delta = raw135 - raw135_prev;
-raw135_prev = raw135;
+  int delta = raw135 - raw135_prev;
+  raw135_prev = raw135;
 
-String nivelCont;
+  String nivelCont;
+  int estadoServo = 0;
 
-if (abs(delta) > UMBRAL_DELTA) {
-    if (delta > 0)  nivelCont = "Rapido +";   // subió rápido
-    else            nivelCont = "Rapido -";   // bajó rápido
-} else {
+  if (abs(delta) > UMBRAL_DELTA) {
+    if (delta > 0) {
+      nivelCont = "Rapido +";
+      estadoServo = 1;
+    } else {
+      nivelCont = "Rapido -";
+      estadoServo = 2;
+    }
+  } else {
     nivelCont = "Estable";
-}
+    estadoServo = 0;
+  }
+
+  // ---------------- SERVO CONTROL ----------------
+  if (estadoServo != estadoServoPrev) {
+    if (estadoServo == 1) servoCont.write(180);
+    else if (estadoServo == 2) servoCont.write(90);
+    else servoCont.write(0);
+
+    estadoServoPrev = estadoServo;
+  }
 
   // ---------------- BARRA DE CONTAMINACIÓN ----------------
   int barWidth = map(raw135, 200, 3500, 0, 120);
-  if (barWidth < 0) barWidth = 0;
-  if (barWidth > 120) barWidth = 120;
-
+  barWidth = constrain(barWidth, 0, 120);
 
   // ---------------- SERIAL DEBUG ----------------
   Serial.print("MQ135 RAW=");
@@ -148,31 +172,25 @@ if (abs(delta) > UMBRAL_DELTA) {
   Serial.print(" delta=");
   Serial.println(delta);
 
-
   // ---------------- OLED ----------------
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x12_tf);
 
-  // 1) Barra nivel MQ135
-  u8g2.drawFrame(0, 0, 128, 10);      // marco
-  u8g2.drawBox(1, 1, barWidth, 8);    // barra interna
+  u8g2.drawFrame(0, 0, 128, 10);
+  u8g2.drawBox(1, 1, barWidth, 8);
 
-  // 2) Nivel (Estable / Rapido)
   char l1[32];
   sprintf(l1, "Nivel: %s", nivelCont.c_str());
   u8g2.drawStr(0, 22, l1);
 
-  // 3) Alcohol % (MQ3)
   char l2[32];
   sprintf(l2, "Alcohol: %.1f %%", pct);
   u8g2.drawStr(0, 35, l2);
 
-  // 4) Aire mg/L (MQ3)
   char l3[32];
   sprintf(l3, "Aire: %.3f mg/L", mgL);
   u8g2.drawStr(0, 48, l3);
 
-  // 5) PERMITIDO / NO CONDUCIR (fuente grande)
   u8g2.setFont(u8g2_font_7x14B_tf);
   u8g2.drawStr(0, 64, estado.c_str());
 
