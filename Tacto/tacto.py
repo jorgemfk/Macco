@@ -8,7 +8,7 @@ import RPi.GPIO as GPIO
 # =============================
 TOUCH_PIN = 21
 SERVER_IP = "127.0.0.1"
-SERVER_PORT = 5002
+SERVER_PORT = 8002
 DEBOUNCE_TIME = 0.5  # segundos
 
 # Secuencia de movimientos a enviar
