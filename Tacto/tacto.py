@@ -34,11 +34,13 @@ try:
         # =========================
         # TOCANDO → DERECHA
         # =========================
-        if touch_state == GPIO.HIGH:
+        if touch_state == True:
             if not touching:
-                print(" Touch ON → derecha")
+                print(" Touch ON → MOV")
             touching = True
-            sock.send(CMD_RIGHT.encode())
+            cmd = random.choice(CMD_FORWARD_OPTIONS)
+            print(" AUTO:", cmd.strip())
+            sock.send(cmd.encode())
             time.sleep(0.12)
 
         # =========================
@@ -51,12 +53,6 @@ try:
                 touching = False
                 last_auto_move = now
 
-            # Movimiento automático (solo si NO toca)
-            if now - last_auto_move > AUTO_INTERVAL:
-                cmd = random.choice(CMD_FORWARD_OPTIONS)
-                print(" AUTO:", cmd.strip())
-                sock.send(cmd.encode())
-                last_auto_move = now
 
         time.sleep(0.02)
 
