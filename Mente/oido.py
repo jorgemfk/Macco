@@ -28,11 +28,11 @@ def analyze_with_openai(texto, wav_path):
         "Debes responder con DOS enunciados unicos:\n"
         "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]' "
         "(elige solo una de estas emociones de acuerdo al texto interpretado por el sonido). "
-        "Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
+        "Haz que suene humano, divertido o poetico, trata de contestar el texto transcrito de manera emocional "
         "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
         "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider, "
         "mencionando ritmo, textura, instrumentos o tono, y debe incluir explicitamente el uso del archivo WAV "
-        f"({wav_path}) como base sonora para la melodia o los samples. "
+        f"({wav_path}) como base sonora para cada melodia o sample. "
         #"Tambien debe mencionar el genero segun la emocion: "
         #"Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, "
         #"Miedo-dark_ambient, Sorpresa-Techno_industrial.\n\n"
@@ -82,7 +82,7 @@ def upload():
     data = {
         "sentido": "oido",
         "fecha": datetime.datetime.now().isoformat(),
-        "wav_path": wav_path,  # 👈 Nueva clave con la ruta del audio
+        "wav_path": wav_path,  #  Nueva clave con la ruta del audio
         "texto_original": texto,
         "respuesta_openai": analisis + wav_path
     }
