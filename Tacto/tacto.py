@@ -30,7 +30,7 @@ try:
     while True:
         touch_state = GPIO.input(TOUCH_PIN)
         now = time.time()
-
+        print(touch_state)
         # =========================
         # TOCANDO → DERECHA
         # =========================
@@ -39,7 +39,7 @@ try:
                 print(" Touch ON → MOV")
             touching = True
             cmd = random.choice(CMD_FORWARD_OPTIONS)
-            print(" AUTO:", cmd.strip())
+            print(" MOV:", cmd.strip())
             sock.send(cmd.encode())
             time.sleep(0.12)
 
