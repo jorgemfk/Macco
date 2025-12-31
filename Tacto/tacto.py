@@ -1,76 +1,69 @@
-# -*- coding: utf-8 -*-
 import socket
 import time
+import random
 import RPi.GPIO as GPIO
 
-# =============================
-# CONFIGURACIÓN
-# =============================
 TOUCH_PIN = 21
 SERVER_IP = "127.0.0.1"
-SERVER_PORT = 8002
-DEBOUNCE_TIME = 0.5  # segundos
+SERVER_PORT = 5002
 
-# Secuencia de movimientos a enviar
-MOVE_SEQUENCE = [
-    "CMD_MOVE#1#-1#16#8#0\n",
-    "CMD_MOVE#1#-1#17#8#0\n",
-    "CMD_MOVE#1#-1#18#8#0\n",
+CMD_RIGHT = "CMD_MOVE#1#34#1#8#0\n"
+CMD_STOP  = "CMD_MOVE#1#0#0#8#0\n"
+
+CMD_FORWARD_OPTIONS = [
+    "CMD_MOVE#1#16#0#8#0\n",   # frente
+    "CMD_MOVE#1#33#1#8#0\n"    # frente-derecha suave
 ]
 
-# =============================
-# GPIO SETUP
-# =============================
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(TOUCH_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# =============================
-# TCP CLIENT
-# =============================
-def connect_client():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((SERVER_IP, SERVER_PORT))
-    print(" Conectado a", SERVER_IP, SERVER_PORT)
-    return sock
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((SERVER_IP, SERVER_PORT))
+print(" Cliente touch conectado")
 
-# =============================
-# MAIN
-# =============================
-def main():
-    sock = connect_client()
-    last_touch_time = 0
-    touching = False
+touching = False
+last_auto_move = 0
+AUTO_INTERVAL = 1.2   # segundos entre movimientos automáticos
 
-    try:
-        while True:
-            touch_state = GPIO.input(TOUCH_PIN)
+try:
+    while True:
+        touch_state = GPIO.input(TOUCH_PIN)
+        now = time.time()
 
-            # TOUCH DETECTADO
-            if touch_state == GPIO.LOW and not touching:
-                now = time.time()
-                if now - last_touch_time > DEBOUNCE_TIME:
-                    touching = True
-                    last_touch_time = now
+        # =========================
+        # TOCANDO → DERECHA
+        # =========================
+        if touch_state == GPIO.HIGH:
+            if not touching:
+                print(" Touch ON → derecha")
+            touching = True
+            sock.send(CMD_RIGHT.encode())
+            time.sleep(0.12)
 
-                    print(" Touch detectado → enviando movimientos")
-
-                    for cmd in MOVE_SEQUENCE:
-                        print("->", cmd.strip())
-                        sock.send(cmd.encode("utf-8"))
-                        time.sleep(0.08)
-
-            # TOUCH LIBERADO
-            elif touch_state == GPIO.HIGH:
+        # =========================
+        # SOLTÓ → STOP + AUTO
+        # =========================
+        else:
+            if touching:
+                print(" Touch OFF → STOP")
+                sock.send(CMD_STOP.encode())
                 touching = False
+                last_auto_move = now
 
-            time.sleep(0.01)
+            # Movimiento automático (solo si NO toca)
+            if now - last_auto_move > AUTO_INTERVAL:
+                cmd = random.choice(CMD_FORWARD_OPTIONS)
+                print(" AUTO:", cmd.strip())
+                sock.send(cmd.encode())
+                last_auto_move = now
 
-    except KeyboardInterrupt:
-        print("\n Cerrando")
-    finally:
-        sock.close()
-        GPIO.cleanup()
+        time.sleep(0.02)
 
-# =============================
-if __name__ == "__main__":
-    main()
+except KeyboardInterrupt:
+    print("\n Cerrando")
+
+finally:
+    sock.send(CMD_STOP.encode())
+    sock.close()
+    GPIO.cleanup()
