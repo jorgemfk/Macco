@@ -84,7 +84,7 @@ def upload():
         "fecha": datetime.datetime.now().isoformat(),
         "wav_path": wav_path,  #  Nueva clave con la ruta del audio
         "texto_original": texto,
-        "respuesta_openai": analisis + wav_path
+        "respuesta_openai": analisis +" Ruta del wav a usar: " +  wav_path
     }
 
     r.publish("emociones", json.dumps(data, ensure_ascii=False))

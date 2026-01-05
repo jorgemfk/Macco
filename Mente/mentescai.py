@@ -23,6 +23,7 @@ sc_proc = None
 error_count = 0
 monitor_thread = None
 lock = threading.Lock()
+tactile_engine_loaded = False   # <<< Tcl
 
 def start_sc():
     """Inicia el proceso SuperCollider y lanza el hilo monitor."""
@@ -44,8 +45,8 @@ def start_sc():
 
 def restart_sc():
     """Reinicia SuperCollider limpiamente."""
-    global sc_proc, error_count, monitor_thread
-
+    global sc_proc, error_count,tactile_engine_loaded
+    tactile_engine_loaded = False
     print(" Reiniciando SuperCollider...")
 
     try:
@@ -92,6 +93,62 @@ def monitor_sc_output():
                     print(" 3 errores acumulados, reiniciando SC.")
                     restart_sc()
                     break
+
+# ==============================
+# SC tactil engine (MEMORIA)
+# ==============================
+TACTILE_SC_ENGINE = r"""
+(
+~layers = IdentityDictionary.new;
+~lastTouch = IdentityDictionary.new;
+
+SynthDef(\touchLayer, { |out=0, freq=200, amp=0.2, pan=0|
+	var env = EnvGen.kr(Env.asr(3, 1, 14), doneAction:2);
+	var sig = SinOsc.ar(freq) * env * amp;
+	Out.ar(out, Pan2.ar(sig, pan));
+}).add;
+
+~pinToSound = { |pin|
+	switch(pin,
+		20, { [80, 0.35, -0.5, 22] },   // grave
+		21, { [900, 0.18, 0.5] },  // agudo
+		22, { [320, 0.12, 0] },    // suave
+		23, { [1200, 0.08, 0.2] },
+		{ [200, 0.1, 0] })};
+
+~touch = { |pin|
+	var params = ~pinToSound.(pin);
+	var now = SystemClock.seconds;
+	~lastTouch[pin] = now;
+
+	if(~layers[pin].isNil) {
+		~layers[pin] = Synth(
+			\touchLayer,
+			[\freq, params[0], \amp, params[1], \pan, params[2]]
+		);
+	} {
+		~layers[pin].set(\amp, params[1]);
+	};
+
+	Routine {
+		18.wait;
+		if(SystemClock.seconds - ~lastTouch[pin] > 16) {
+			~layers[pin].free;
+			~layers.removeAt(pin);
+		}
+	}.play;
+};
+)
+"""
+def ensure_tactile_engine():
+    global tactile_engine_loaded
+    if not tactile_engine_loaded:
+        sc_code = unify_blocks(TACTILE_SC_ENGINE)
+        print(sc_code)
+        sc_proc.stdin.write("s.waitForBoot({( " + sc_code + " )});\n")
+        sc_proc.stdin.flush()
+        tactile_engine_loaded = True
+        print(" Motor tactil con memoria cargado.")
 
 # ---- 1. Arrancar SuperCollider (sclang) ----
 start_sc()
@@ -147,6 +204,7 @@ def parens_balanced(code: str) -> bool:
                 return False  # hay un ")" sin "(" previo
             stack.pop()
     return len(stack) == 0
+
 def unify_blocks(code: str) -> str:
     """Une SynthDef + Pbind en un solo bloque ( ... ) para SC."""
     code = code.strip()
@@ -165,19 +223,6 @@ def unify_blocks(code: str) -> str:
     code = re.sub(r"```.*?```", "", code, flags=re.DOTALL)
     code = re.sub(r'//.*$', '', code, flags=re.MULTILINE)
     code = re.sub(r'(?m)^[ \t]*[()] *$', '', code)
-    #code = code.lstrip("(\n").rstrip(")\n")
-    #remove_unbalanced_parens(code)
-    #code = code.replace(".add;\n)\n", ".add;\n")
-    #code = code.replace(".fork;\n)\n", ".fork;\n")
-    #code = code.replace("(\nPbind", "\nPbind")
-    #code = code.replace("(\nPmono", "\nPmono")
-    #code = code.replace(".play;\n)\n", ".play;\n")
-    #code = code.replace("\n)\n(", "\n")
-    #code = code.replace(")\n(", "\n")
-    #if not code.startswith("("):
-    #    code = "(\n" + code
-    #if not code.endswith(")"):
-    #    code = code + "\n)"
     code = code.replace("\n", " ")
     return code
 
@@ -242,6 +287,16 @@ for message in pubsub.listen():
         if total_chars > 8000:
             chat_history = chat_history[-3:]  # conservar ultimos 6 mensajes
 
+        # ==========================
+        #  CASO TACTO 
+        # ==========================
+        if data.get("sentido") == "tacto":
+            ensure_tactile_engine()
+            pin = data.get("pin", 0)
+            sc_proc.stdin.write(f"~touch.value({pin});\n")
+            sc_proc.stdin.flush()
+            continue   # <<< no ejecuta lo siguiente
+
         # Cada 10 mensajes, cambia+r estado de animo
         print(f"==== historia { len(chat_history)} ==== " )
         #mood = data["emocion"]
@@ -300,32 +355,15 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
         # Insertar dentro de s.waitForBoot solo si es la primera vez
         sc_code = unify_blocks(sc_code)
         if parens_balanced(sc_code):
-            #if passs == 1  :
-            #    if "s.boot" not in sc_code and "s.waitForBoot" not in sc_code:
-            #        sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
-            #    passs = 2
-            #else :
-            #    sc_code = "(" + sc_code
-            #    sc_code = sc_code + ")"
             sc_proc.stdin.write("s.freeAll; Pdef.all.do(_.stop); TempoClock.default.clear;\n")
             sc_proc.stdin.flush()
             time.sleep(1.5)
             sc_code = "s.waitForBoot({s.freeAll; " + sc_code + " });"
 
             print("==== Nuevo bloque SC ====")
-            #print(sc_code)
-            #print("=========================")
-                # Limpieza automatica de nodos antes de cargar
-            #sc_proc.stdin.write("Routine { s.sync; s.freeAll; }.play;")
-            #sc_proc.stdin.write("s.freeAll;")
-            #sc_proc.stdin.flush()
-            #time.sleep(5)
-
             # Enviar bloque a SC
             sc_proc.stdin.write(sc_code + "\n")
             sc_proc.stdin.flush()
-            # Esperar antes de la siguiente iteracion
-            #time.sleep(3)
         else:
             print("?? Bloque descartado: parentesis no balanceados")
             print(sc_code)
