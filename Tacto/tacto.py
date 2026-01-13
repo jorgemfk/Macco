@@ -10,7 +10,7 @@ import RPi.GPIO as GPIO
 TOUCH_PINS = [21, 20]        # puedes agregar más
 SERVER_IP = "127.0.0.1"
 CMD_PORT = 5002
-TACTO_SERVER = "http://127.0.0.1:5822/touch"
+TACTO_SERVER = "http://192.168.0.200:5822/touch"
 
 CMD_STOP = "CMD_MOVE#1#0#0#8#0\n"
 
@@ -51,7 +51,7 @@ try:
     while True:
         now = time.time()
 
-        active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == GPIO.LOW]
+        active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == GPIO.HIGH]
 
         # =============================
         # TOQUE ACTIVO
