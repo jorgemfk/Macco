@@ -1,14 +1,22 @@
 #include <Wire.h>
 #include <U8g2lib.h>
 #include <ESP32Servo.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
 // =======================
 // ====== SERVO CONFIG ===
 // =======================
-#define SERVO_PIN 26
-Servo servoCont;
+#define SERVO_PIN1 26
+#define SERVO_PIN2 25
+Servo servoCont1;
+Servo servoCont2;
 int estadoServoPrev = -1; 
 // 0 = Estable, 1 = Rapido +, 2 = Rapido -
+//WIFI CONFIG
+const char* ssid = "Bait_F-02_1521";
+const char* password = "1234567890";
+const char* serverUrl = "http://192.168.0.200:5823/olfato";
 
 // =======================
 // ====== MQ135 CONFIG ====
@@ -31,6 +39,15 @@ U8G2_SSD1309_128X64_NONAME0_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 float filtro = 0;
 float base = 0;
+
+// ------------------------------
+// nivel lectura
+// ------------------------------
+String nivelRaw(int raw) {
+  if (raw < 1200) return "bajo";
+  if (raw < 2200) return "medio";
+  return "alto";
+}
 
 // ------------------------------
 // Calibración MQ3
@@ -95,17 +112,29 @@ void setup() {
   Serial.begin(115200);
 
   // Servo
-  servoCont.attach(SERVO_PIN);
-  servoCont.write(0); // posición inicial
+  servoCont1.attach(SERVO_PIN1);
+  servoCont1.write(0); // posición inicial
+  servoCont2.attach(SERVO_PIN2);
+  servoCont2.write(0);
 
   Wire.begin(21, 22);
   u8g2.begin();
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x12_tf);
+  u8g2.drawStr(0, 10, "Conectando...");
+  u8g2.sendBuffer();
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi conectado");
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x12_tf);
   u8g2.drawStr(0, 10, "Calibrando...");
   u8g2.sendBuffer();
-
+  delay(5000);
   calibrarMQ3();
   calibrarMQ135();
 }
@@ -118,7 +147,7 @@ void loop() {
   // ---------------- MQ3 ----------------
   float pct = leerAlcoholPct();
   float mgL = estimarMgL(pct);
-  String estado = (mgL > 0.039) ? "NO CONDUCIR" : "PERMITIDO";
+  String estado = (mgL > 0.039) ? "NO CONDUCIR" : "NIVEL BAJO";
 
   // ---------------- MQ135 ----------------
   long suma135 = 0;
@@ -153,11 +182,35 @@ void loop() {
 
   // ---------------- SERVO CONTROL ----------------
   if (estadoServo != estadoServoPrev) {
-    if (estadoServo == 1) servoCont.write(180);
-    else if (estadoServo == 2) servoCont.write(90);
-    else servoCont.write(0);
-
+    if (estadoServo == 1) {
+      servoCont1.write(180);
+      servoCont2.write(90);
+    }else if (estadoServo == 2) {
+      servoCont1.write(90);
+      servoCont2.write(0);
+    }else {
+      servoCont1.write(0);
+      servoCont2.write(180);
+    }
     estadoServoPrev = estadoServo;
+  }
+  //----------------- ENVIO DATA
+  String nivel = nivelRaw(raw135);
+
+  if (WiFi.status() == WL_CONNECTED && estadoServo >= 1) {
+    HTTPClient http;
+    http.begin(serverUrl);
+    http.addHeader("Content-Type", "application/json");
+
+    String payload = "{";
+    payload += "\"sentido\":\"olfato\",";
+    payload += "\"raw135\":" + String(raw135) + ",";
+    payload += "\"velocidad\":\"" + String(estadoServo) + "\",";
+    payload += "\"nivel\":\"" + nivel + "\"";
+    payload += "}";
+
+    http.POST(payload);
+    http.end();
   }
 
   // ---------------- BARRA DE CONTAMINACIÓN ----------------
