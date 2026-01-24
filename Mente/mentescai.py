@@ -13,11 +13,18 @@ from textwrap import wrap
 import psutil
 import threading
 import signal
+from sys import path
+#path += ['../../']
+from IT8951.test_functions import *
+from IT8951.display import AutoEPDDisplay
+from IT8951 import constants
+from PIL import ImageDraw, ImageFont
+import textwrap
 
 #os.environ["QT_QPA_PLATFORM"] = "offscreen"
 # Comando base con sus posibles argumentos
-SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
-#SCLANG_CMD = ["pw-jack","sclang"]
+#SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
+SCLANG_CMD = ["pw-jack","sclang"]
 
 sc_proc = None
 error_count = 0
@@ -255,6 +262,191 @@ def mostrar_info(mood: str):
         #draw.text((0, 15), cpu_usage, fill="white")
         #draw.text((0, 30), f"Temp: {temp}", fill="white")
         #draw.text((0, 45), mem_usage, fill="white")
+#display de papel        
+EMOTION_ANIMATORS = {
+    "Enojo": "animate_angry",
+    "Asco": "animate_disgust",
+    "Miedo": "animate_fear",
+    "Felicidad": "animate_happy",
+    "Tristeza": "animate_sad",
+    "Sorpresa": "animate_surprise",
+    "Neutral": "animate_neutral",
+}
+
+from PIL import ImageDraw
+
+def clear_face_area(img, cx, cy, size):
+    img.paste(
+        0xFF,
+        (cx-size, cy-size, cx+size, cy+size)
+    )
+
+
+def draw_eyes(draw, cx, cy, dx, dy, r):
+    draw.ellipse((cx-dx-r, cy-dy-r, cx-dx+r, cy-dy+r), fill=0)
+    draw.ellipse((cx+dx-r, cy-dy-r, cx+dx+r, cy-dy+r), fill=0)
+
+
+def draw_mouth_line(draw, cx, y, w, thickness=3):
+    draw.line((cx-w, y, cx+w, y), fill=0, width=thickness)
+
+
+def draw_mouth_circle(draw, cx, cy, r, fill=False):
+    if fill:
+        draw.ellipse((cx-r, cy-r, cx+r, cy+r), fill=0)
+    else:
+        draw.ellipse((cx-r, cy-r, cx+r, cy+r), outline=0, width=3)
+
+
+def draw_smile(draw, cx, cy, w, h):
+    draw.arc((cx-w, cy-h, cx+w, cy+h), 0, 180, fill=0, width=3)
+
+
+def draw_frown(draw, cx, cy, w, h):
+    draw.arc((cx-w, cy, cx+w, cy+h), 180, 360, fill=0, width=3)
+
+import time
+
+def animate_surprise(display, cx, cy, size=70, delay=0.25):
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    frames = [
+        {"eye_r": 5, "mouth": "line"},
+        {"eye_r": 8, "mouth": "circle"},
+        {"eye_r": 10, "mouth": "circle"},
+        {"eye_r": 8, "mouth": "line"},
+    ]
+
+    for f in frames:
+        clear_face_area(img, cx, cy, size)
+
+        draw_eyes(d, cx, cy, dx=25, dy=20, r=f["eye_r"])
+
+        if f["mouth"] == "line":
+            draw_mouth_line(d, cx, cy+25, w=15)
+        else:
+            draw_mouth_circle(d, cx, cy+25, r=10)
+
+        display.draw_partial(constants.DisplayModes.DU)
+        time.sleep(delay)
+def animate_happy(display, cx, cy, size=70, delay=0.3):
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    frames = [
+        {"eye_open": True,  "smile_h": 12},
+        {"eye_open": False, "smile_h": 18},
+        {"eye_open": True,  "smile_h": 22},
+    ]
+
+    for f in frames:
+        clear_face_area(img, cx, cy, size)
+
+        if f["eye_open"]:
+            draw_eyes(d, cx, cy, dx=25, dy=20, r=5)
+        else:
+            # ojos cerrados (curva)
+            d.arc((cx-35, cy-20, cx-15, cy-10), 0, 180, fill=0, width=3)
+            d.arc((cx+15, cy-20, cx+35, cy-10), 0, 180, fill=0, width=3)
+
+        draw_smile(d, cx, cy+25, w=30, h=f["smile_h"])
+
+        display.draw_partial(constants.DisplayModes.DU)
+        time.sleep(delay)
+def animate_neutral(display, cx, cy, size=70, delay=0.5):
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    for _ in range(2):
+        clear_face_area(img, cx, cy, size)
+        draw_eyes(d, cx, cy, dx=25, dy=20, r=5)
+        draw_mouth_line(d, cx, cy+25, w=20)
+        display.draw_partial(constants.DisplayModes.DU)
+        time.sleep(delay)
+
+def draw_text_centered_autosize(
+    img,
+    text,
+    max_width_px,
+    max_height_px,
+    max_fontsize=72,
+    min_fontsize=28,
+    line_spacing_ratio=0.25
+):
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font_path = "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+        ImageFont.truetype(font_path, 10)
+    except OSError:
+        font_path = "/usr/share/fonts/TTF/DejaVuSans.ttf"
+
+    img_w, img_h = img.size
+
+    for fontsize in range(max_fontsize, min_fontsize - 1, -2):
+        font = ImageFont.truetype(font_path, fontsize)
+
+        avg_char_width = sum(font.getlength(c) for c in "abcdefghijklmnopqrstuvwxyz") / 26
+        max_chars = int(max_width_px / avg_char_width)
+
+        lines = textwrap.wrap(text, width=max_chars)
+
+        line_spacing = int(fontsize * line_spacing_ratio)
+
+        total_height = 0
+        max_line_width = 0
+
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+            max_line_width = max(max_line_width, w)
+            total_height += h
+
+        total_height += line_spacing * (len(lines) - 1)
+
+        if max_line_width <= max_width_px and total_height <= max_height_px:
+            break
+
+    start_y = (img_h - total_height) // 2
+
+    y = start_y
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        w = bbox[2] - bbox[0]
+        x = (img_w - w) // 2
+        draw.text((x, y), line, font=font, fill=0)
+        y += (bbox[3] - bbox[1]) + line_spacing
+
+        
+def mostrar_info_ink(display, mood_text: str, emocion: str):
+    clear_display(display)
+
+    display.frame_buf.paste(
+        0xFF, (0, 0, display.width, display.height)
+    )
+
+    # Texto: una sola vez
+    draw_text_centered_autosize(
+        display.frame_buf,
+        mood_text,
+        max_width_px=720,
+        max_height_px=380,
+        max_fontsize=64
+    )
+
+    display.draw_partial(constants.DisplayModes.DU)
+
+    # Cara animada
+    cx = display.width // 2
+    cy = 110
+
+    animator_name = EMOTION_ANIMATORS.get(emocion, "animate_neutral")
+    animator = globals()[animator_name]
+
+    animator(display, cx, cy)
+
 
 def extract_code(text):
     """Extrae bloque de codigo entre backticks"""
@@ -275,6 +467,7 @@ passs = 1
 
 # inicializar oled?I2C1; direccion 0x3c
 #device = ssd1306(port=1, address=0x3C)
+display = AutoEPDDisplay(vcom=-2.15, rotate='flip', mirror=None, spi_hz=24000000)
 # ---- 3. Bucle generativo ----
 for message in pubsub.listen():
     if message["type"] == "message":
@@ -287,6 +480,13 @@ for message in pubsub.listen():
         if total_chars > 8000:
             chat_history = chat_history[-3:]  # conservar ultimos 6 mensajes
 
+        parts = re.split(r"(?<=\))\s|\n", data["respuesta_openai"], maxsplit=1)
+        first_sentence = parts[0].strip() if parts else ""
+        second_sentence = parts[1].strip() if len(parts) > 1 else ""
+
+        mood = first_sentence
+        mood_instruction = second_sentence
+        mostrar_info_ink(display, mood, 'Felicidad')
         # ==========================
         #  CASO TACTO 
         # ==========================
@@ -302,15 +502,7 @@ for message in pubsub.listen():
         #mood = data["emocion"]
         #mood_instruction = get_mood_description(mood)
 
-        parts = re.split(r"(?<=\))\s|\n", data["respuesta_openai"], maxsplit=1)
-        first_sentence = parts[0].strip() if parts else ""
-        second_sentence = parts[1].strip() if len(parts) > 1 else ""
 
-        mood = first_sentence
-        mood_instruction = second_sentence
-
-        #mood, mood_instruction = random.choice(moods)
-        #mostrar_info(mood)
         system_msg = f"Eres un DJ live coder Eclectico en SuperCollider 3.10, capaz de generar texturas musicales con base en emociones. Estado actual: {mood}."
         user_msg = f"""
 Genera código SuperCollider (SC 3.10) con entre 5 y 7 SynthDef y patrones Pbind/Pseq/Prand
