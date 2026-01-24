@@ -607,7 +607,7 @@ if __name__=="__main__":
                      face_det_input_size, emotion_input_size, anchors,
                      confidence_threshold, nms_threshold,
                      rgb888p_size, display_size)
-    #WIFI_Connect()
+    WIFI_Connect()
 
     while True:
         with ScopedTiming("total",1):
@@ -615,7 +615,7 @@ if __name__=="__main__":
             dets, emotions = fe.run(img)        # Inferencia
             fe.draw_result(pl, dets, emotions)  # Dibuja resultados
             pl.show_image()                     # Muestra en pantalla
-            #procesar_envios_pendientes()
+            procesar_envios_pendientes()
             gc.collect()
 
     fe.face_det.deinit()
