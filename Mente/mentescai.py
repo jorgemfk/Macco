@@ -21,6 +21,10 @@ from IT8951 import constants
 from PIL import ImageDraw, ImageFont
 import textwrap
 
+_face_anim_thread = None
+_face_anim_running = False
+
+
 #os.environ["QT_QPA_PLATFORM"] = "offscreen"
 # Comando base con sus posibles argumentos
 #SCLANG_CMD = ["/Applications/SuperCollider.app/Contents/MacOS/sclang"]
@@ -262,18 +266,16 @@ def mostrar_info(mood: str):
         #draw.text((0, 15), cpu_usage, fill="white")
         #draw.text((0, 30), f"Temp: {temp}", fill="white")
         #draw.text((0, 45), mem_usage, fill="white")
-#display de papel        
-EMOTION_ANIMATORS = {
-    "Enojo": "animate_angry",
-    "Asco": "animate_disgust",
-    "Miedo": "animate_fear",
-    "Felicidad": "animate_happy",
-    "Tristeza": "animate_sad",
-    "Sorpresa": "animate_surprise",
-    "Neutral": "animate_neutral",
-}
+#display de papel 
+def stop_face_animation():
+    global _face_anim_running, _face_anim_thread
 
-from PIL import ImageDraw
+    _face_anim_running = False
+
+    if _face_anim_thread and _face_anim_thread.is_alive():
+        _face_anim_thread.join(timeout=1)
+
+    _face_anim_thread = None
 
 def clear_face_area(img, cx, cy, size):
     img.paste(
@@ -305,32 +307,12 @@ def draw_smile(draw, cx, cy, w, h):
 def draw_frown(draw, cx, cy, w, h):
     draw.arc((cx-w, cy, cx+w, cy+h), 180, 360, fill=0, width=3)
 
-import time
+####gestos animados
 
-def animate_surprise(display, cx, cy, size=70, delay=0.25):
-    img = display.frame_buf
-    d = ImageDraw.Draw(img)
 
-    frames = [
-        {"eye_r": 5, "mouth": "line"},
-        {"eye_r": 8, "mouth": "circle"},
-        {"eye_r": 10, "mouth": "circle"},
-        {"eye_r": 8, "mouth": "line"},
-    ]
+def animate_happy_loop(display, cx, cy, size=70):
+    global _face_anim_running
 
-    for f in frames:
-        clear_face_area(img, cx, cy, size)
-
-        draw_eyes(d, cx, cy, dx=25, dy=20, r=f["eye_r"])
-
-        if f["mouth"] == "line":
-            draw_mouth_line(d, cx, cy+25, w=15)
-        else:
-            draw_mouth_circle(d, cx, cy+25, r=10)
-
-        display.draw_partial(constants.DisplayModes.DU)
-        time.sleep(delay)
-def animate_happy(display, cx, cy, size=70, delay=0.3):
     img = display.frame_buf
     d = ImageDraw.Draw(img)
 
@@ -340,30 +322,210 @@ def animate_happy(display, cx, cy, size=70, delay=0.3):
         {"eye_open": True,  "smile_h": 22},
     ]
 
-    for f in frames:
-        clear_face_area(img, cx, cy, size)
+    while _face_anim_running:
+        for f in frames:
+            if not _face_anim_running:
+                break
 
-        if f["eye_open"]:
-            draw_eyes(d, cx, cy, dx=25, dy=20, r=5)
-        else:
-            # ojos cerrados (curva)
-            d.arc((cx-35, cy-20, cx-15, cy-10), 0, 180, fill=0, width=3)
-            d.arc((cx+15, cy-20, cx+35, cy-10), 0, 180, fill=0, width=3)
+            # limpiar SOLO la cara
+            img.paste(
+                0xFF,
+                (cx-size, cy-size, cx+size, cy+size)
+            )
 
-        draw_smile(d, cx, cy+25, w=30, h=f["smile_h"])
+            # ojos
+            if f["eye_open"]:
+                d.ellipse((cx-30, cy-25, cx-20, cy-15), fill=0)
+                d.ellipse((cx+20, cy-25, cx+30, cy-15), fill=0)
+            else:
+                d.arc((cx-35, cy-25, cx-15, cy-10), 0, 180, fill=0, width=3)
+                d.arc((cx+15, cy-25, cx+35, cy-10), 0, 180, fill=0, width=3)
 
-        display.draw_partial(constants.DisplayModes.DU)
-        time.sleep(delay)
-def animate_neutral(display, cx, cy, size=70, delay=0.5):
+            # boca
+            d.arc((cx-30, cy+10, cx+30, cy+30),
+                  0, 180, fill=0, width=3)
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.4)
+
+def animate_surprise_loop(display, cx, cy, size=70):
+    global _face_anim_running
+
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+    frames = [
+        {"eye_r": 5,  "mouth": "line"},
+        {"eye_r": 8,  "mouth": "circle"},
+        {"eye_r": 10, "mouth": "circle"},
+        {"eye_r": 8,  "mouth": "line"},
+    ]
+
+    while _face_anim_running:
+        for f in frames:
+            if not _face_anim_running:
+                break
+
+            img.paste(
+                0xFF,
+                (cx-size, cy-size, cx+size, cy+size)
+            )
+
+            # ojos
+            for dx in (-25, 25):
+                d.ellipse(
+                    (cx+dx-f["eye_r"], cy-20-f["eye_r"],
+                     cx+dx+f["eye_r"], cy-20+f["eye_r"]),
+                    fill=0
+                )
+
+            # boca
+            if f["mouth"] == "line":
+                d.line((cx-15, cy+25, cx+15, cy+25), fill=0, width=3)
+            else:
+                d.ellipse((cx-10, cy+15, cx+10, cy+35), outline=0, width=3)
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.25)
+            
+def animate_angry_loop(display, cx, cy, size=70):
+    global _face_anim_running
     img = display.frame_buf
     d = ImageDraw.Draw(img)
 
-    for _ in range(2):
-        clear_face_area(img, cx, cy, size)
-        draw_eyes(d, cx, cy, dx=25, dy=20, r=5)
-        draw_mouth_line(d, cx, cy+25, w=20)
-        display.draw_partial(constants.DisplayModes.DU)
-        time.sleep(delay)
+    frames = [-2, 2, -1, 1]
+
+    while _face_anim_running:
+        for dx in frames:
+            if not _face_anim_running:
+                break
+
+            img.paste(0xFF, (cx-size, cy-size, cx+size, cy+size))
+
+            # cejas
+            d.line((cx-40+dx, cy-30, cx-20+dx, cy-20), fill=0, width=3)
+            d.line((cx+20+dx, cy-20, cx+40+dx, cy-30), fill=0, width=3)
+
+            # ojos
+            d.ellipse((cx-35+dx, cy-20, cx-25+dx, cy-10), fill=0)
+            d.ellipse((cx+25+dx, cy-20, cx+35+dx, cy-10), fill=0)
+
+            # boca rigida
+            d.line((cx-25+dx, cy+25, cx+25+dx, cy+25), fill=0, width=4)
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.3)
+
+def animate_disgust_loop(display, cx, cy, size=70):
+    global _face_anim_running
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    frames = [-8, -4, -6]
+
+    while _face_anim_running:
+        for shift in frames:
+            if not _face_anim_running:
+                break
+
+            img.paste(0xFF, (cx-size, cy-size, cx+size, cy+size))
+
+            # ojos semi cerrados
+            d.arc((cx-40, cy-25, cx-20, cy-15), 0, 180, fill=0, width=3)
+            d.arc((cx+20, cy-25, cx+40, cy-15), 0, 180, fill=0, width=3)
+
+            # boca torcida
+            d.line(
+                (cx-20, cy+25+shift, cx+20, cy+25-shift),
+                fill=0,
+                width=3
+            )
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.4)
+
+def animate_fear_loop(display, cx, cy, size=70):
+    global _face_anim_running
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    radii = [6, 9, 12, 9]
+
+    while _face_anim_running:
+        for r in radii:
+            if not _face_anim_running:
+                break
+
+            img.paste(0xFF, (cx-size, cy-size, cx+size, cy+size))
+
+            # ojos grandes
+            d.ellipse((cx-35-r, cy-25-r, cx-35+r, cy-25+r), fill=0)
+            d.ellipse((cx+35-r, cy-25-r, cx+35+r, cy-25+r), fill=0)
+
+            # boca temblor
+            d.ellipse((cx-10, cy+20, cx+10, cy+35), outline=0, width=3)
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.25)
+
+def animate_sad_loop(display, cx, cy, size=70):
+    global _face_anim_running
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    offsets = [0, 2, 4, 2]
+
+    while _face_anim_running:
+        for off in offsets:
+            if not _face_anim_running:
+                break
+
+            img.paste(0xFF, (cx-size, cy-size, cx+size, cy+size))
+
+            # ojos caidos
+            d.arc((cx-40, cy-20+off, cx-20, cy-5+off), 180, 360, fill=0, width=3)
+            d.arc((cx+20, cy-20+off, cx+40, cy-5+off), 180, 360, fill=0, width=3)
+
+            # boca caida
+            d.arc((cx-30, cy+15+off, cx+30, cy+45+off), 180, 360, fill=0, width=3)
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.5)
+
+def animate_neutral_loop(display, cx, cy, size=70):
+    global _face_anim_running
+    img = display.frame_buf
+    d = ImageDraw.Draw(img)
+
+    offsets = [0, 1, 0, -1]
+
+    while _face_anim_running:
+        for off in offsets:
+            if not _face_anim_running:
+                break
+
+            img.paste(0xFF, (cx-size, cy-size, cx+size, cy+size))
+
+            # ojos
+            d.ellipse((cx-35, cy-25+off, cx-25, cy-15+off), fill=0)
+            d.ellipse((cx+25, cy-25+off, cx+35, cy-15+off), fill=0)
+
+            # boca neutra
+            d.line((cx-20, cy+25+off, cx+20, cy+25+off), fill=0, width=2)
+
+            display.draw_partial(constants.DisplayModes.DU)
+            time.sleep(0.6)
+       
+EMOTION_LOOP = {
+    "Enojo": animate_angry_loop,
+    "Asco": animate_disgust_loop,
+    "Miedo": animate_fear_loop,
+    "Felicidad": animate_happy_loop,
+    "Tristeza": animate_sad_loop,
+    "Sorpresa": animate_surprise_loop,
+    "Neutral": animate_neutral_loop,
+}
+
+#
 
 def draw_text_centered_autosize(
     img,
@@ -421,31 +583,41 @@ def draw_text_centered_autosize(
 
         
 def mostrar_info_ink(display, mood_text: str, emocion: str):
-    clear_display(display)
+    global _face_anim_running, _face_anim_thread
 
+    # 1. detener animacion anterior
+    stop_face_animation()
+    print(emocion)
+    # 2. limpiar pantalla
+    clear_display(display)
     display.frame_buf.paste(
         0xFF, (0, 0, display.width, display.height)
     )
-
-    # Texto: una sola vez
+    
+    # 3. dibujar TEXTO (una vez)
     draw_text_centered_autosize(
         display.frame_buf,
         mood_text,
-        max_width_px=720,
-        max_height_px=380,
+        max_width_px=780,
+        max_height_px=400,
         max_fontsize=64
     )
 
     display.draw_partial(constants.DisplayModes.DU)
 
-    # Cara animada
+    # 4. arrancar animacion persistente
     cx = display.width // 2
     cy = 110
 
-    animator_name = EMOTION_ANIMATORS.get(emocion, "animate_neutral")
-    animator = globals()[animator_name]
-
-    animator(display, cx, cy)
+    animator = EMOTION_LOOP.get(emocion)
+    if animator:
+        _face_anim_running = True
+        _face_anim_thread = threading.Thread(
+            target=animator,
+            args=(display, cx, cy),
+            daemon=True
+        )
+        _face_anim_thread.start()
 
 
 def extract_code(text):
@@ -480,13 +652,24 @@ for message in pubsub.listen():
         if total_chars > 8000:
             chat_history = chat_history[-3:]  # conservar ultimos 6 mensajes
 
-        parts = re.split(r"(?<=\))\s|\n", data["respuesta_openai"], maxsplit=1)
-        first_sentence = parts[0].strip() if parts else ""
-        second_sentence = parts[1].strip() if len(parts) > 1 else ""
+        texto = data["respuesta_openai"].strip()
 
-        mood = first_sentence
-        mood_instruction = second_sentence
-        mostrar_info_ink(display, mood, 'Felicidad')
+        frase_emocional = ""
+        descripcion_sonora = ""
+        emocion = ""
+
+        for part in texto.split():
+            if part.startswith("frase:"):
+                frase_emocional = texto.split("frase:",1)[1].split(" descripcion_sonora:",1)[0].strip()
+            elif part.startswith("descripcion_sonora:"):
+                descripcion_sonora = texto.split("descripcion_sonora:",1)[1].split(" emocion:",1)[0].strip()
+            elif part.startswith("emocion:"):
+                emocion = texto.split("emocion:",1)[1].strip()
+
+
+        mood = frase_emocional
+        mood_instruction = descripcion_sonora
+        mostrar_info_ink(display, mood, emocion)
         # ==========================
         #  CASO TACTO 
         # ==========================

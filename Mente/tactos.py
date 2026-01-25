@@ -26,15 +26,36 @@ def analyze_tacto(pin, descripcion):
     prompt = (
         f"Un robot siente un estimulo por el sentido del tacto.\n\n"
         f"Descripcion del toque:\n\"{descripcion}\"\n\n"
-        "Responde con DOS enunciados unicos:\n"
-        "1. El primero debe comenzar exactamente con "
-        "'Siento [Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]'. "
-        "Hazlo poetico y corporal ej: Si... Disfruto mucho de este toque, humano.Completas mi circuito.... Termina con un emoji ASCII pequeno.\n"
-        "2. El segundo debe describir como esa sensacion tactil se "
-        "transformaria en una sinfonia generativa en SuperCollider "
-        "usando ritmo, textura y timbre corporal.\n\n"
-        "No uses acentos ni emojis graficos."
+        "Responde con EXACTAMENTE TRES enunciados en UNA sola linea, "
+        "usando el siguiente formato estricto y sin saltos de linea:\n\n"
+
+        "frase:<texto>\n"
+        "descripcion_sonora:<texto>\n"
+        "emocion:<una sola palabra>"
+
+        "Reglas:\n"
+        "- frase debe expresar una de estas emociones: "
+        "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
+        "- frase debe ser poetica y corporal\n"
+        "- frase debe incluir la traduccion al ingles entre parentesis\n"
+        "- descripcion_sonora debe describir como la sensacion tactil "
+        "se transforma en una sinfonia generativa en SuperCollider "
+        "usando ritmo, textura y timbre corporal\n"
+        "- emocion debe ser SOLO UNA PALABRA y SOLO puede ser una de: "
+        "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
+        "- No enumeres, no expliques, no agregues texto extra\n"
+        "- No uses acentos ni emojis graficos\n\n"
+
+        "Ejemplo de salida valida:\n"
+        "frase:Siento sorpresa al recibir ese toque, como un pulso que despierta mi cuerpo "
+        "(I feel surprise at receiving that touch, like a pulse awakening my body). "
+        "descripcion_sonora:La presion se convierte en una textura ritmica de pulsos lentos "
+        "y resonancias suaves que crecen en capas. "
+        "emocion:Sorpresa"
+
+        "Ahora genera tu respuesta."
     )
+
 
     response = openai.chat.completions.create(
         model="gpt-4o-mini",
