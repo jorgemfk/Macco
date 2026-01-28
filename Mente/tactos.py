@@ -33,7 +33,7 @@ def analyze_tacto(pin, descripcion):
         "descripcion_sonora:<texto>\n"
         "emocion:<una sola palabra>"
 
-        "Reglas:\n"
+        " Reglas:\n"
         "- frase debe expresar una de estas emociones: "
         "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
         "- frase debe ser poetica y corporal\n"
@@ -51,7 +51,7 @@ def analyze_tacto(pin, descripcion):
         "(I feel surprise at receiving that touch, like a pulse awakening my body). "
         "descripcion_sonora:La presion se convierte en una textura ritmica de pulsos lentos "
         "y resonancias suaves que crecen en capas. "
-        "emocion:Sorpresa"
+        "emocion:Sorpresa\n"
 
         "Ahora genera tu respuesta."
     )

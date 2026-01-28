@@ -83,23 +83,45 @@ class Vista:
 
     def _analyze_with_openai(self, totals):
         """Envía totales diarios a OpenAI para generar un resumen poético."""
+        
+            #+ "\n".join([f"{e}: {totals[e]}" for e in self.emociones])
         prompt = (
-            "Analiza las siguientes emociones detectadas recientemente:\n\n"
-            + "\n".join([f"{e}: {totals[e]}" for e in self.emociones])
-            + "\n\n"
-            "Debes responder con DOS enunciados unicos:\n"
-            "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]' "
-            "(elige solo una de estas emociones). Haz que suene humano, divertido o poetico, como si fueras un DJ que siente la energia del publico. "
-            "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
-            "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider , "
-            "mencionando ritmo, textura, instrumentos o tono"
-            #"y explicitamente el genero de acuerdo ala emocion por ejemplo Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, Miedo-dark_ambient, Sorpresa-Techno_industrial .\n\n"
-            "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
-            "Ejemplo:\n"
-            "Siento Tristeza, como si si mi corazon se undiera en el olvido eterno. (U_U)\n"
-            "Creare una sinfonia dark wave con sonido melancolico y a menudo introspectivo, utilizando tonos menores y sintetizadores.\n\n"
-            "Ahora genera tu respuesta."
+    "Un robot observa a un grupo de humanos y percibe su energia emocional colectiva.\n\n"
+    "Emociones detectadas y cantidad de rostros asociados:\n"
+    + "\n".join([f"{e}: {totals[e]}" for e in self.emociones])
+    + "\n\n"
+    "Interpreta TODAS las emociones juntas como un solo estimulo global.\n"
+    "No respondas por cada emocion individual.\n"
+    "Determina una UNICA emocion dominante que represente lo que el conjunto "
+    "de humanos le hace sentir al robot en este momento.\n\n"
+    "Responde con EXACTAMENTE TRES enunciados en UNA sola linea, "
+    "usando el siguiente formato estricto y sin saltos de linea:\n\n"
+    "frase:<texto>\n"
+    "descripcion_sonora:<texto>\n"
+    "emocion:<una sola palabra>"
+    " Reglas:\n"
+    "- frase debe expresar UNA SOLA emocion dominante elegida de: "
+    "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
+    "- frase debe reaccionar a la energia emocional colectiva del grupo humano, "
+    "como un DJ que siente el pulso del publico en su cuerpo\n"
+    "- frase debe ser poetica, ludica o corporal\n"
+    "- frase debe incluir la traduccion al ingles entre parentesis\n"
+    "- descripcion_sonora debe describir como ESA emocion dominante "
+    "se transforma en una sinfonia generativa en SuperCollider\n"
+    "- descripcion_sonora debe integrar la idea de multiples emociones "
+    "fundidas en una sola textura sonora\n"
+    "- emocion debe ser SOLO UNA PALABRA\n"
+    "- No enumeres, no expliques, no generes multiples respuestas\n"
+    "- No uses acentos ni emojis graficos\n\n"
+    "Ejemplo de salida valida:\n"
+    "frase:La energia del publico me atraviesa como una alegria electrica que se expande "
+    "(The crowd energy runs through me like an electric joy expanding outward). "
+    "descripcion_sonora:Las emociones mezcladas se funden en ritmos brillantes y capas "
+    "pulsantes, con sintetizadores abiertos y percusion elastica que respira con la sala. "
+    "emocion:Felicidad\n"
+    "Ahora genera tu respuesta."
         )
+
 
 
         response = self.client.chat.completions.create(
