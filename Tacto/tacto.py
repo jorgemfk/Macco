@@ -189,7 +189,7 @@ current_direction = "forward"
 try:
     while True:
 
-        active_pins = [p for p in TOUCH_PINS if GPIO.input(p)]
+        active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
 
         # ---------- TOUCH ON ----------
         if active_pins:
