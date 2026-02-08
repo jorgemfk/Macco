@@ -37,8 +37,8 @@ SERVO_MIN = 0
 SERVO_MAX = 90
 
 # Movimiento
-CMD_FORWARD = "CMD_MOVE#1#16#0#8#0\n"
-CMD_TURN = "CMD_MOVE#1#33#1#8#0\n"
+CMD_FORWARD = "CMD_MOVE#1#33#1#8#0\n"
+CMD_TURN = "CMD_MOVE#1#16#0#8#0\n"
 CMD_STOP = "CMD_MOVE#1#0#0#8#0\n"
 
 # =============================
@@ -181,7 +181,7 @@ sock.connect((SERVER_IP, CMD_PORT))
 print("Cliente movimiento conectado")
 
 touching_pin = None
-current_direction = "forward"
+current_direction = "none"
 
 # =============================
 # LOOP PRINCIPAL
@@ -219,9 +219,10 @@ try:
                             sock.send(CMD_FORWARD.encode())
                             current_direction = "forward"
                 else:
-                    if current_direction != "forward":
-                        sock.send(CMD_FORWARD.encode())
-                        current_direction = "forward"
+                    #if current_direction != "forward":
+                    sock.send(CMD_FORWARD.encode())
+                    sock.send(CMD_FORWARD.encode())
+                    current_direction = "forward"
 
         # ---------- TOUCH OFF ----------
         else:
