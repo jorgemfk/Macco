@@ -22,26 +22,39 @@ def sanitize_text(text: str) -> str:
 def analyze_with_openai(texto, wav_path):
     """Analiza el texto transcrito y genera respuesta emocional tipo DJ."""
     prompt = (
-        f"Analiza el siguiente texto transcrito de una voz humana:\n\n"
-        f"\"{texto}\"\n\n"
-        f"El archivo de sonido original se encuentra en: {wav_path}\n\n"
-        "Debes responder con DOS enunciados unicos:\n"
-        "1. El primer enunciado debe comenzar exactamente con 'Siento [Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]' "
-        "(elige solo una de estas emociones de acuerdo al texto interpretado por el sonido). "
-        "Haz que suene humano, divertido o poetico, trata de contestar el texto transcrito de manera emocional "
-        "Termina el enunciado con un emoji ASCII pequeno adecuado a la emocion.\n"
-        "2. El segundo enunciado debe describir como esa emocion se convertira en una sinfonia generativa en SuperCollider, "
-        "mencionando ritmo, textura, instrumentos o tono, y debe incluir explicitamente el uso del archivo WAV "
-        f"({wav_path}) como base sonora para cada melodia o sample. "
-        #"Tambien debe mencionar el genero segun la emocion: "
-        #"Tristeza-dark_wave, Felicidad-Synth_pop, Enojo-noise, Neutral-Techno, Asco-Gothic_techno, "
-        #"Miedo-dark_ambient, Sorpresa-Techno_industrial.\n\n"
-        "No uses acentos, emojis graficos ni menciones de IA o codigo. Solo texto plano.\n\n"
-        "Ejemplo:\n"
-        "Siento Tristeza, como si mi corazon se undiera en el olvido eterno. (U_U)\n"
-        "Creare una sinfonia oscura ambiental con sonido melancolico y a menudo introspectivo, utilizando tonos menores y sintetizadores, "
-        "usando el archivo WAV como fuente para los ecos de la melodia.\n\n"
-        "Ahora genera tu respuesta."
+    "Un robot escucha una voz humana y percibe su carga emocional.\n\n"
+    f"Texto transcrito de la voz:\n\"{texto}\"\n\n"
+    f"El archivo de sonido original se encuentra en: {wav_path}\n\n"
+    "Responde con EXACTAMENTE TRES enunciados en UNA sola linea, "
+    "usando el siguiente formato estricto y sin saltos de linea:\n\n"
+    "frase:<texto>\n"
+    "descripcion_sonora:<texto>\n"
+    "emocion:<una sola palabra>"
+    " Reglas:\n"
+    "- frase debe expresar una de estas emociones: "
+    "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
+    "- frase debe reaccionar emocionalmente al texto transcrito, "
+    "como si el robot respondiera corporalmente a esa voz\n"
+    "- frase debe ser poetica, humana o ludica, retadora\n"
+    "- frase debe incluir la traduccion al ingles entre parentesis\n"
+    "- descripcion_sonora debe describir como esa emocion se transforma "
+    "en una sinfonia generativa en SuperCollider\n"
+    "- descripcion_sonora debe mencionar explicitamente el uso del archivo WAV "
+    f"({wav_path}) como base sonora para ritmos, melodias o samples\n"
+    "- descripcion_sonora debe hablar de ritmo, textura y timbre emocional\n"
+    "- emocion debe ser SOLO UNA PALABRA y SOLO puede ser una de: "
+    "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
+    "- No enumeres, no expliques, no agregues texto extra\n"
+    "- No uses acentos ni emojis graficos\n\n"
+    "Ejemplo de salida valida:\n"
+    f"frase:Tu voz \"{texto}\" me atraviesa con una tristeza suave que pesa en el pecho "
+    "(Your voice pierces me with a soft sadness that weighs on my chest). "
+    "descripcion_sonora:La grabacion se fragmenta en SuperCollider en capas lentas, "
+    f"con estiramientos temporales y resonancias graves, usando el archivo WAV {wav_path} "
+    "como fuente principal para drones y ecos respiratorios. "
+    "emocion:Tristeza\n"
+    "Ahora genera tu respuesta."
+
     )
 
     response = openai.chat.completions.create(
@@ -76,7 +89,7 @@ def upload():
     # --- Análisis emocional tipo DJ + referencia al WAV ---
     analisis = analyze_with_openai(texto, wav_path)
     analisis = sanitize_text(analisis)
-    print("Interpretación emocional:", analisis)
+    print("Interpretacion emocional:", analisis)
 
     # --- Publicar en Redis ---
     data = {
@@ -84,7 +97,7 @@ def upload():
         "fecha": datetime.datetime.now().isoformat(),
         "wav_path": wav_path,  #  Nueva clave con la ruta del audio
         "texto_original": texto,
-        "respuesta_openai": analisis +" Ruta del wav a usar: " +  wav_path
+        "respuesta_openai": analisis 
     }
 
     r.publish("emociones", json.dumps(data, ensure_ascii=False))
