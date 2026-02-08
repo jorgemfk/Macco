@@ -128,26 +128,30 @@ SynthDef(\touchLayer, { |out=0, freq=200, amp=0.2, pan=0|
 		{ [200, 0.1, 0] })};
 
 ~touch = { |pin|
-	var params = ~pinToSound.(pin);
-	var now = SystemClock.seconds;
-	~lastTouch[pin] = now;
+    var params, now, synth;
 
-	if(~layers[pin].isNil) {
-		~layers[pin] = Synth(
-			\touchLayer,
-			[\freq, params[0], \amp, params[1], \pan, params[2]]
-		);
-	} {
-		~layers[pin].set(\amp, params[1]);
-	};
+    params = ~pinToSound.(pin);
+    now = SystemClock.seconds;
+    ~lastTouch[pin] = now;
 
-	Routine {
-		18.wait;
-		if(SystemClock.seconds - ~lastTouch[pin] > 16) {
-			~layers[pin].free;
-			~layers.removeAt(pin);
-		}
-	}.play;
+    if(~layers[pin].isNil) {
+        synth = Synth(\touchLayer, [
+            \freq, params[0],
+            \amp, params[1],
+            \pan, params[2]]);
+        ~layers[pin] = synth;
+    } {
+        synth = ~layers[pin];
+        synth.set(\amp, params[1]);};
+    Routine {
+        18.wait;
+        if(SystemClock.seconds - ~lastTouch[pin] > 16) {
+            synth.free;
+            ~layers.removeAt(pin);
+        }
+    }.play;
+
+    synth 
 };
 )
 """
@@ -676,7 +680,7 @@ for message in pubsub.listen():
         if data.get("sentido") == "tacto":
             ensure_tactile_engine()
             pin = data.get("pin", 0)
-            sc_proc.stdin.write(f"~touch.value({pin});\n")
+            sc_proc.stdin.write(f"SystemClock.sched(0.2, {{ ~touch.value({pin}); }});\n")
             sc_proc.stdin.flush()
             continue   # <<< no ejecuta lo siguiente
 
