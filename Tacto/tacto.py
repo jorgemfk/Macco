@@ -4,7 +4,10 @@ import time
 import threading
 import queue
 import requests
+import warnings
+
 import RPi.GPIO as GPIO
+from gpiozero import DistanceSensor, PWMSoftwareFallback, DistanceSensorNoEcho
 from pca9685 import PCA9685
 
 # =============================
@@ -15,16 +18,23 @@ CMD_PORT = 5002
 
 # Touch
 TOUCH_PINS = [21]
-TACTO_SERVER = "http://192.168.11.82:5822/touch"
+TACTO_SERVER = "http://192.168.0.82:5822/touch"
 
-# Sonar
-TRIGGER_PIN = 27
-ECHO_PIN = 22
+# Ultrasonicos (puedes agregar más)
+ULTRASONICS = [
+    {"trigger": 27, "echo": 22, "name": "front"},
+    # {"trigger": 5, "echo": 6, "name": "left"},
+    # {"trigger": 23, "echo": 24, "name": "right"},
+]
+
+MAX_DISTANCE = 3.0      # metros
 OBSTACLE_CM = 25.0
 
 # Servo
 SERVO_CHANNEL = 1
 SERVO_CENTER = 45
+SERVO_MIN = 0
+SERVO_MAX = 90
 
 # Movimiento
 CMD_FORWARD = "CMD_MOVE#1#16#0#8#0\n"
@@ -35,16 +45,31 @@ CMD_STOP = "CMD_MOVE#1#0#0#8#0\n"
 # GPIO SETUP
 # =============================
 GPIO.setmode(GPIO.BCM)
-
-# Touch
 for pin in TOUCH_PINS:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# Sonar
-GPIO.setup(TRIGGER_PIN, GPIO.OUT)
-GPIO.setup(ECHO_PIN, GPIO.IN)
-GPIO.output(TRIGGER_PIN, False)
-time.sleep(0.1)
+# =============================
+# ULTRASONIC CLASS (basada en tu código)
+# =============================
+class Ultrasonic:
+    def __init__(self, trigger_pin: int, echo_pin: int, max_distance: float = 3.0):
+        warnings.filterwarnings("ignore", category=DistanceSensorNoEcho)
+        warnings.filterwarnings("ignore", category=PWMSoftwareFallback)
+
+        self.sensor = DistanceSensor(
+            trigger=trigger_pin,
+            echo=echo_pin,
+            max_distance=max_distance
+        )
+
+    def get_distance(self):
+        try:
+            return round(self.sensor.distance * 100, 1)
+        except RuntimeWarning:
+            return None
+
+    def close(self):
+        self.sensor.close()
 
 # =============================
 # SERVO PCA9685
@@ -60,7 +85,7 @@ class Servo:
         self.pwm_41.set_pwm_freq(50)
         time.sleep(0.02)
 
-    def set_servo_angle(self, channel, angle):
+    def set_angle(self, channel, angle):
         duty = map_value(angle, 0, 180, 500, 2500)
         duty = map_value(duty, 0, 20000, 0, 4095)
 
@@ -77,30 +102,7 @@ class Servo:
 servo = Servo()
 
 # =============================
-# SONAR
-# =============================
-def read_distance_cm():
-    GPIO.output(TRIGGER_PIN, True)
-    time.sleep(0.00001)
-    GPIO.output(TRIGGER_PIN, False)
-
-    timeout = time.time() + 0.04
-
-    while GPIO.input(ECHO_PIN) == 0:
-        if time.time() > timeout:
-            return None
-        start = time.time()
-
-    while GPIO.input(ECHO_PIN) == 1:
-        if time.time() > timeout:
-            return None
-        end = time.time()
-
-    duration = end - start
-    return round(duration * 17150, 2)
-
-# =============================
-# TACTO ASYNC WORKER
+# TACTO ASYNC
 # =============================
 tacto_queue = queue.Queue()
 
@@ -110,11 +112,7 @@ def tacto_worker():
         if pin is None:
             break
         try:
-            requests.post(
-                TACTO_SERVER,
-                json={"pin": pin},
-                timeout=0.3
-            )
+            requests.post(TACTO_SERVER, json={"pin": pin}, timeout=0.3)
         except Exception as e:
             print("⚠ tacto server:", e)
         tacto_queue.task_done()
@@ -125,38 +123,53 @@ def notify_tacto_server(pin):
     tacto_queue.put(pin)
 
 # =============================
-# SONAR SCAN THREAD
-# Solo escanea si touch activo
+# ULTRASONIC SETUP
 # =============================
+ultrasonics = {
+    cfg["name"]: Ultrasonic(cfg["trigger"], cfg["echo"], MAX_DISTANCE)
+    for cfg in ULTRASONICS
+}
+
 sonar_state = {
     "angle": SERVO_CENTER,
-    "distance": None
+    "distance": None,
+    "sensor": None
 }
 
 touch_active = False
 
+# =============================
+# SONAR + SERVO SCAN THREAD
+# =============================
 def sonar_scan_loop():
+    global sonar_state
 
-    angles = list(range(0, 91, 15)) + list(range(90, -1, -15))
+    angles = list(range(SERVO_MIN, SERVO_MAX + 1, 15)) + \
+             list(range(SERVO_MAX, SERVO_MIN - 1, -15))
 
     while True:
 
         if not touch_active:
-            servo.set_servo_angle(SERVO_CHANNEL, SERVO_CENTER)
+            servo.set_angle(SERVO_CHANNEL, SERVO_CENTER)
             time.sleep(0.1)
             continue
 
         for angle in angles:
-
             if not touch_active:
                 break
 
-            servo.set_servo_angle(SERVO_CHANNEL, angle)
+            servo.set_angle(SERVO_CHANNEL, angle)
             time.sleep(0.03)
 
-            dist = read_distance_cm()
-            sonar_state["angle"] = angle
-            sonar_state["distance"] = dist
+            # leer todos los ultrasonicos
+            for name, sensor in ultrasonics.items():
+                dist = sensor.get_distance()
+                if dist is not None:
+                    sonar_state.update({
+                        "angle": angle,
+                        "distance": dist,
+                        "sensor": name
+                    })
 
 threading.Thread(target=sonar_scan_loop, daemon=True).start()
 
@@ -176,13 +189,10 @@ current_direction = "forward"
 try:
     while True:
 
-        active_pins = [p for p in TOUCH_PINS if GPIO.input(p)== True]
+        active_pins = [p for p in TOUCH_PINS if GPIO.input(p)]
 
-        # =============================
-        # TOUCH ACTIVO
-        # =============================
+        # ---------- TOUCH ON ----------
         if active_pins:
-
             pin = active_pins[0]
 
             if touching_pin != pin:
@@ -194,12 +204,13 @@ try:
 
             dist = sonar_state["distance"]
             angle = sonar_state["angle"]
+            sensor = sonar_state["sensor"]
 
             if dist is not None:
-                print(f"📡 {dist} cm @ {angle}°")
+                print(f"📡 {sensor}: {dist} cm @ {angle}°")
 
                 if dist <= OBSTACLE_CM:
-                    if angle < 45:
+                    if angle < SERVO_CENTER:
                         if current_direction != "turn":
                             sock.send(CMD_TURN.encode())
                             current_direction = "turn"
@@ -212,13 +223,10 @@ try:
                         sock.send(CMD_FORWARD.encode())
                         current_direction = "forward"
 
-        # =============================
-        # TOUCH OFF
-        # =============================
+        # ---------- TOUCH OFF ----------
         else:
             if touching_pin is not None:
                 print("✋ Touch OFF → STOP")
-
                 sock.send(CMD_STOP.encode())
                 touching_pin = None
                 current_direction = "forward"
@@ -234,5 +242,9 @@ finally:
     tacto_queue.put(None)
     sock.send(CMD_STOP.encode())
     sock.close()
+
+    for u in ultrasonics.values():
+        u.close()
+
     servo.relax()
     GPIO.cleanup()
