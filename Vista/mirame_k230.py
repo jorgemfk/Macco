@@ -133,8 +133,10 @@ SERVO5_OFF = 2
 
 servo5_state = SERVO5_IDLE
 servo5_timer = 0
+glob_inflado=5000
+glob_des=3000
 def update_servo5(face_detected):
-    global servo5_state, servo5_timer
+    global servo5_state, servo5_timer, glob_inflado, glob_des
 
     now = time.ticks_ms()
 
@@ -142,21 +144,23 @@ def update_servo5(face_detected):
     if servo5_state == SERVO5_IDLE:
         if face_detected:
             s.position(5, 180)
+            s.position(6, 0)
             servo5_timer = now
             servo5_state = SERVO5_ON
             print("[SERVO5] ON 180°")
 
     # Estado ON → esperar 5 s
     elif servo5_state == SERVO5_ON:
-        if time.ticks_diff(now, servo5_timer) >= 5000:
+        if time.ticks_diff(now, servo5_timer) >= glob_inflado:
             s.position(5, 0)
+            s.position(6, 180)
             servo5_timer = now
             servo5_state = SERVO5_OFF
             print("[SERVO5] OFF 0°")
 
     # Estado OFF → esperar 5 s antes de rearmar
     elif servo5_state == SERVO5_OFF:
-        if time.ticks_diff(now, servo5_timer) >= 5000:
+        if time.ticks_diff(now, servo5_timer) >= glob_des:
             servo5_state = SERVO5_IDLE
             print("[SERVO5] READY")
 
@@ -166,7 +170,7 @@ def update_servo5(face_detected):
 
 pendientes = []
 ultimo_envio = 0
-
+WIFI_OK = False
 
 
 def enviar_emociones_hilo(resumen):
@@ -177,6 +181,9 @@ def enviar_emociones_async(resumen):
     pendientes.append(resumen)
 
 def procesar_envios_pendientes():
+    if not WIFI_OK:
+        print(" WiFi no conectado")
+        return
     global pendientes, ultimo_envio
     if len(pendientes) > 0:
         ahora = time.ticks_ms()
@@ -186,10 +193,13 @@ def procesar_envios_pendientes():
             ultimo_envio = ahora
 
 def enviar_emociones(resumen):
+    if not WIFI_OK:
+        print(" WiFi no conectado, POST cancelado")
+        return
     try:
         data = ujson.dumps({"emociones": resumen})
         #host = "192.168.1.207"
-        host = "192.168.0.200"
+        host = "192.168.0.82"
         port = 5820
         path = "/emociones"
 
@@ -206,46 +216,56 @@ def enviar_emociones(resumen):
     except Exception as e:
         print(" Error POST:", e)
 
+def mostrar_mensaje(pl, texto, duracion_ms=1000):
+    pl.osd_img.clear()
+    pl.osd_img.draw_string(40, 200, texto,
+                           color=(255,255,0,255),
+                           scale=4)
+    pl.show_image()
+    time.sleep_ms(duracion_ms)
+    pl.osd_img.clear()
+    pl.show_image()
 
 
-def WIFI_Connect():
-
+def WIFI_Connect(pl):
+    global WIFI_OK
     WIFI_LED=Pin(52, Pin.OUT)
-
+    pl.osd_img.draw_rectangle(0, 440, 800, 40, color=(120, 0, 0, 0), thickness=-1)
     wlan = network.WLAN(network.STA_IF)
     #wlan.disconnect()        # 🔹 Rompe cualquier conexión previa
     time.sleep(0.5)
     wlan.active(True)
-
+    mostrar_mensaje(pl, "Conectando WiFi...")
     if not wlan.isconnected():
 
         print('conectando...')
 
-        for i in range(10):
+        for i in range(20):
 
             #wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
-            wlan.connect('Bait_F-02_1521', '1234567890')
+            #wlan.connect('Bait_F-02_1521', '1234567890')
+
+            time.sleep_ms(300)
             if wlan.isconnected():
                 break
 
     if wlan.isconnected():
 
         print('connectado')
-        pl.osd_img.draw_string(0, 0, 'conectado',
-                               color=(255,255,0,255), scale=4)
-
+        mostrar_mensaje(pl, "WiFi conectado")
+        WIFI_OK = True
         WIFI_LED.value(1)
 
 
         while wlan.ifconfig()[0] == '0.0.0.0':
-            pass
+            time.sleep_ms(50)
 
 
         print('network :', wlan.ifconfig())
-
+        mostrar_mensaje(pl, str(wlan.ifconfig()))
     else:
 
-
+        mostrar_mensaje(pl, "WiFi NO conectado")
         for i in range(3):
             WIFI_LED.value(1)
             time.sleep_ms(300)
@@ -264,7 +284,7 @@ EMOTION_COLORS = {
     "Asco":       (120, 200,  60, 255),
     "Miedo":      (40,   80, 160, 255),
     "Felicidad":  (255, 220,   0, 255),
-    "Tristeza":   (100, 130, 160, 255),
+    "Tristeza":   (100, 130, 250, 255),
     "Sorpresa":   (220,  80, 200, 255),
     "Neutral":    (200, 200, 200, 255),
 }
@@ -402,7 +422,8 @@ def schedule_emotional_gesture(emotion):
     # =========================
     if emotion == "Felicidad":
         gesture_step_delay = 28   # rápido, fluido
-
+        glob_inflado=9000
+        glob_des=3000
         # head tilt amplio y rítmico
         for _ in range(2):
             enqueue_move(SERVO_CABEZA, t0, 50, 5)
@@ -414,7 +435,8 @@ def schedule_emotional_gesture(emotion):
     # =========================
     elif emotion == "Tristeza":
         gesture_step_delay = 70   # lento, pesado
-
+        glob_inflado=3000
+        glob_des=1000
         # caída progresiva
         enqueue_move(SERVO_EJE_Y, y0, 6, 10)
         enqueue_move(SERVO_CABEZA, t0, 18, 8)
@@ -422,7 +444,8 @@ def schedule_emotional_gesture(emotion):
     # =========================
     elif emotion == "Miedo":
         gesture_step_delay = 25   # nervioso
-
+        glob_inflado=2000
+        glob_des=500
         # retracción rápida
         enqueue_move(SERVO_EJE_Y, y0, 4, 6)
         enqueue_move(SERVO_CABEZA, t0, 12, 6)
@@ -435,7 +458,8 @@ def schedule_emotional_gesture(emotion):
     # =========================
     elif emotion == "Enojo":
         gesture_step_delay = 20   # brusco
-
+        glob_inflado=4000
+        glob_des=1000
         # golpe hacia arriba
         enqueue_move(SERVO_EJE_Y, y0, 38, 4)
         enqueue_move(SERVO_CABEZA, t0, 35, 3)
@@ -446,7 +470,8 @@ def schedule_emotional_gesture(emotion):
     # =========================
     elif emotion == "Sorpresa":
         gesture_step_delay = 15   # muy rápido
-
+        glob_inflado=3000
+        glob_des=3000
         # apertura súbita
         enqueue_move(SERVO_EJE_Y, y0, 42, 3)
         enqueue_move(SERVO_CABEZA, t0, 55, 3)
@@ -457,7 +482,8 @@ def schedule_emotional_gesture(emotion):
     # =========================
     elif emotion == "Asco":
         gesture_step_delay = 45   # irregular
-
+        glob_inflado=10000
+        glob_des=4000
         # retiro + giro evasivo
         enqueue_move(SERVO_EJE_Y, y0, 10, 6)
         enqueue_move(SERVO_CABEZA, t0, 48, 4)
@@ -554,7 +580,7 @@ class FaceEmotion:
                 text_x = x + w // 2 - len(emotion) * 8 // 2
                 text_y = max(0, y - 25)
                 pl.osd_img.draw_string(text_x, text_y, emotion,
-                                       color=(255,255,0,255), scale=4)
+                                       color, scale=4)
                 # --- Contar emociones ---
                 resumen[emotion] = resumen.get(emotion, 0) + 1
 
@@ -607,7 +633,7 @@ if __name__=="__main__":
                      face_det_input_size, emotion_input_size, anchors,
                      confidence_threshold, nms_threshold,
                      rgb888p_size, display_size)
-    WIFI_Connect()
+    WIFI_Connect(pl)
 
     while True:
         with ScopedTiming("total",1):
