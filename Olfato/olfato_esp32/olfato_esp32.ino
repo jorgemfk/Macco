@@ -14,9 +14,9 @@ Servo servoCont2;
 int estadoServoPrev = -1; 
 // 0 = Estable, 1 = Rapido +, 2 = Rapido -
 //WIFI CONFIG
-const char* ssid = "Bait_F-02_1521";
-const char* password = "1234567890";
-const char* serverUrl = "http://192.168.0.200:5823/olfato";
+const char* ssid = "JORGEMFK";
+
+const char* serverUrl = "http://192.168.0.82:5823/olfato";
 
 // =======================
 // ====== MQ135 CONFIG ====
@@ -209,7 +209,21 @@ void loop() {
     payload += "\"nivel\":\"" + nivel + "\"";
     payload += "}";
 
-    http.POST(payload);
+    
+  int httpResponseCode = http.POST(payload);
+
+  if (httpResponseCode > 0) {
+    Serial.print("POST enviado, codigo HTTP: ");
+    Serial.println(httpResponseCode);
+
+    String response = http.getString();
+    Serial.print("Respuesta servidor: ");
+    Serial.println(response);
+  } else {
+    Serial.print("No se puede conectar al host. Error: ");
+    Serial.println(http.errorToString(httpResponseCode));
+  }
+
     http.end();
   }
 
