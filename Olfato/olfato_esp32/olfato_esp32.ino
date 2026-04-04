@@ -7,13 +7,29 @@
 // =======================
 // ====== SERVO CONFIG ===
 // =======================
-#define SERVO_PIN1 26
-#define SERVO_PIN2 25
-Servo servoCont1;
-Servo servoCont2;
-int estadoServoPrev = -1; 
-// 0 = Estable, 1 = Rapido +, 2 = Rapido -
-//WIFI CONFIG
+#define SERVO_360_PIN 26   // servo continuo 360
+#define SERVO_180_PIN 25   // servo posicional 180
+
+Servo servo360;
+Servo servo180;
+
+// Servo 360 (continuo)
+const int SERVO360_MIN_US  = 500;
+const int SERVO360_MAX_US  = 2500;
+const int SERVO360_STOP_US = 1500;
+
+// Servo 180 (posicional)
+const int SERVO180_MIN_DEG = 0;
+const int SERVO180_MAX_DEG = 180;
+const int SERVO180_HOME    = 90;
+
+// Estado de movimiento
+int estadoServoPrev = 0;      // último estado activo (1 o 2)
+bool servoActivo = false;     // si está corriendo animación
+unsigned long servoInicioMs = 0;
+const unsigned long DURACION_SERVO_MS = 15000; // 5 segundos
+
+// WIFI CONFIG
 const char* ssid = "JORGEMFK";
 
 const char* serverUrl = "http://192.168.0.82:5823/olfato";
@@ -106,16 +122,152 @@ void calibrarMQ135() {
 }
 
 // =======================
-// ======== SETUP =========
+// ===== SERVO HELPERS ===
+// =======================
+
+// detener servo 360
+void detenerServo360() {
+  servo360.writeMicroseconds(SERVO360_STOP_US);
+}
+
+// posición home del servo 180
+void homeServo180() {
+  servo180.write(SERVO180_HOME);
+}
+
+// detener todo
+void detenerServos() {
+  detenerServo360();
+  homeServo180();
+}
+
+// iniciar animación de 5 segundos
+void iniciarMovimiento(int estadoServo) {
+  if (estadoServo < 1 || estadoServo > 2) return;
+
+  servoActivo = true;
+  servoInicioMs = millis();
+  estadoServoPrev = estadoServo;
+
+  Serial.print("Iniciando movimiento 5s, estado = ");
+  Serial.println(estadoServo);
+}
+
+// animación no bloqueante de ambos servos
+void actualizarServos() {
+  if (!servoActivo) {
+    detenerServos();
+    return;
+  }
+
+  unsigned long ahora = millis();
+  unsigned long t = ahora - servoInicioMs;
+
+  // terminar a los 5 segundos
+  if (t >= DURACION_SERVO_MS) {
+    servoActivo = false;
+    detenerServos();
+    Serial.println("Movimiento terminado (5s)");
+    return;
+  }
+
+  // -----------------------------
+  // SERVO 360 (pin 26)
+  // -----------------------------
+  // Rampa de aceleración en los primeros 1500ms
+  float factor = 1.0;
+  const unsigned long RAMPA_MS = 1500;
+
+  if (t < RAMPA_MS) {
+    factor = (float)t / (float)RAMPA_MS;
+  }
+
+  int offsetMax = 0;
+  int direccion = 0;
+
+  if (estadoServoPrev == 1) {
+    // estado 1 = más agresivo, sentido 1
+    offsetMax = 320;   // velocidad máxima
+    direccion = +1;    // un sentido
+  } else if (estadoServoPrev == 2) {
+    // estado 2 = más suave, sentido contrario
+    offsetMax = 180;   // velocidad menor
+    direccion = -1;    // sentido contrario
+  }
+
+  int offsetActual = (int)(offsetMax * factor);
+  int us360 = SERVO360_STOP_US + (direccion * offsetActual);
+  us360 = constrain(us360, SERVO360_MIN_US, SERVO360_MAX_US);
+  servo360.writeMicroseconds(us360);
+
+  // -----------------------------
+  // SERVO 180 (pin 25)
+  // -----------------------------
+  // movimiento tipo "torcedura" con seno
+  // estado 1 y 2 tienen diferente amplitud y número de ciclos
+  float progreso = (float)t / (float)DURACION_SERVO_MS; // 0.0 a 1.0
+
+  float ciclos = 0.0;
+  int centro = 90;
+  int amplitud = 0;
+
+  if (estadoServoPrev == 1) {
+    // 4 torceduras medianas
+    ciclos = 4.0;
+    centro = 90;
+    amplitud = 40; // 50 a 130 aprox
+  } else if (estadoServoPrev == 2) {
+    // 2 torceduras amplias
+    ciclos = 2.0;
+    centro = 90;
+    amplitud = 70; // 20 a 160 aprox
+  }
+
+  // curva seno
+  float ang = centro + amplitud * sin(2.0 * PI * ciclos * progreso);
+
+  // pequeña "entrada" suave en los primeros 300 ms
+  if (t < 300) {
+    float entrada = (float)t / 300.0;
+    ang = SERVO180_HOME + (ang - SERVO180_HOME) * entrada;
+  }
+
+  int angulo180 = constrain((int)ang, SERVO180_MIN_DEG, SERVO180_MAX_DEG);
+  servo180.write(angulo180);
+
+  // debug
+  Serial.print("t=");
+  Serial.print(t);
+  Serial.print(" | estado=");
+  Serial.print(estadoServoPrev);
+  Serial.print(" | us360=");
+  Serial.print(us360);
+  Serial.print(" | ang180=");
+  Serial.println(angulo180);
+}
+
+// =======================
+// ======== SETUP ========
 // =======================
 void setup() {
   Serial.begin(115200);
 
-  // Servo
-  servoCont1.attach(SERVO_PIN1);
-  servoCont1.write(0); // posición inicial
-  servoCont2.attach(SERVO_PIN2);
-  servoCont2.write(0);
+  // ---- Configurar servos correctamente ----
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
+  // Servo 360
+  servo360.setPeriodHertz(50);
+  servo360.attach(SERVO_360_PIN, SERVO360_MIN_US, SERVO360_MAX_US);
+
+  // Servo 180
+  servo180.setPeriodHertz(50);
+  servo180.attach(SERVO_180_PIN, 500, 2500);
+
+  // posiciones iniciales
+  detenerServos();
 
   Wire.begin(21, 22);
   u8g2.begin();
@@ -124,23 +276,43 @@ void setup() {
   u8g2.setFont(u8g2_font_6x12_tf);
   u8g2.drawStr(0, 10, "Conectando...");
   u8g2.sendBuffer();
+
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+
+  int intentos = 0;
+  while (WiFi.status() != WL_CONNECTED && intentos < 30) {
     delay(500);
     Serial.print(".");
+    intentos++;
   }
-  Serial.println("\nWiFi conectado");
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi conectado");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x12_tf);
+    u8g2.drawStr(0, 10, "WiFi conectado");
+    u8g2.sendBuffer();
+    delay(1000);
+  } else {
+    Serial.println("\nNo se pudo conectar a WiFi");
+  }
+
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x12_tf);
   u8g2.drawStr(0, 10, "Calibrando...");
   u8g2.sendBuffer();
+
   delay(5000);
   calibrarMQ3();
   calibrarMQ135();
+
+  Serial.println("Setup completo");
 }
 
 // =======================
-// ========= LOOP =========
+// ========= LOOP ========
 // =======================
 void loop() {
 
@@ -151,7 +323,7 @@ void loop() {
 
   // ---------------- MQ135 ----------------
   long suma135 = 0;
-  for (int i=0; i < NUM_LECTURAS_MQ135; i++) {
+  for (int i = 0; i < NUM_LECTURAS_MQ135; i++) {
     suma135 += analogRead(MQ135_PIN);
     delay(5);
   }
@@ -180,21 +352,16 @@ void loop() {
     estadoServo = 0;
   }
 
-  // ---------------- SERVO CONTROL ----------------
-  if (estadoServo != estadoServoPrev) {
-    if (estadoServo == 1) {
-      servoCont1.write(180);
-      servoCont2.write(90);
-    }else if (estadoServo == 2) {
-      servoCont1.write(90);
-      servoCont2.write(0);
-    }else {
-      servoCont1.write(0);
-      servoCont2.write(180);
-    }
-    estadoServoPrev = estadoServo;
+  // ---------------- ACTIVAR MOVIMIENTO ----------------
+  // Solo dispara si detecta evento y no está ya corriendo
+  if (!servoActivo && estadoServo >= 1) {
+    iniciarMovimiento(estadoServo);
   }
-  //----------------- ENVIO DATA
+
+  // actualizar animación de servos
+  actualizarServos();
+
+  // ---------------- ENVIO DATA ----------------
   String nivel = nivelRaw(raw135);
 
   if (WiFi.status() == WL_CONNECTED && estadoServo >= 1) {
@@ -209,22 +376,23 @@ void loop() {
     payload += "\"nivel\":\"" + nivel + "\"";
     payload += "}";
 
-    
-  int httpResponseCode = http.POST(payload);
+    int httpResponseCode = http.POST(payload);
 
-  if (httpResponseCode > 0) {
-    Serial.print("POST enviado, codigo HTTP: ");
-    Serial.println(httpResponseCode);
+    if (httpResponseCode > 0) {
+      Serial.print("POST enviado, codigo HTTP: ");
+      Serial.println(httpResponseCode);
 
-    String response = http.getString();
-    Serial.print("Respuesta servidor: ");
-    Serial.println(response);
-  } else {
-    Serial.print("No se puede conectar al host. Error: ");
-    Serial.println(http.errorToString(httpResponseCode));
-  }
+      String response = http.getString();
+      Serial.print("Respuesta servidor: ");
+      Serial.println(response);
+    } else {
+      Serial.print("No se puede conectar al host. Error: ");
+      Serial.println(http.errorToString(httpResponseCode));
+    }
 
     http.end();
+  } else if (estadoServo >= 1) {
+    Serial.println("No se puede conectar al host: WiFi no conectado");
   }
 
   // ---------------- BARRA DE CONTAMINACIÓN ----------------
@@ -237,7 +405,11 @@ void loop() {
   Serial.print(" mg135=");
   Serial.print(mg135);
   Serial.print(" delta=");
-  Serial.println(delta);
+  Serial.print(delta);
+  Serial.print(" estadoServo=");
+  Serial.print(estadoServo);
+  Serial.print(" activo=");
+  Serial.println(servoActivo ? "SI" : "NO");
 
   // ---------------- OLED ----------------
   u8g2.clearBuffer();
@@ -263,5 +435,5 @@ void loop() {
 
   u8g2.sendBuffer();
 
-  delay(150);
+  delay(80);
 }
