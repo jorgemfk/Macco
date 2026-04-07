@@ -242,9 +242,9 @@ def WIFI_Connect(pl):
 
         for i in range(20):
 
-            #wlan.connect('INFINITUM47A4_2.4', 'eFwN3s9VPP')
+            
             #wlan.connect('Bait_F-02_1521', '1234567890')
-
+            
             time.sleep_ms(300)
             if wlan.isconnected():
                 break
