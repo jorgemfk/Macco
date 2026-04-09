@@ -17,7 +17,7 @@ SERVER_IP = "127.0.0.1"
 CMD_PORT = 5002
 
 # Touch
-TOUCH_PINS = [21]#, 25, 20, 12]
+TOUCH_PINS = [21]  # si luego agregas más, el código ya soporta personalidad
 TACTO_SERVER = "http://192.168.0.82:5822/touch"
 
 # Ultrasonicos (SOLO FRONT Y REAR)
@@ -28,7 +28,9 @@ ULTRASONICS = [
 
 MAX_DISTANCE_CM = 300.0
 OBSTACLE_CM = 25.0
-RECHECK_INTERVAL = 0.12    # evita saturar server
+
+# re-check durante movimiento/espera
+RECHECK_INTERVAL = 0.12
 
 # =============================
 # SERVOS DE ULTRASONIC
@@ -46,10 +48,8 @@ SERVO_MAX = 90
 FRONT_PATTERN = [20, 35, 45, 60, 70, 55, 45, 30]
 REAR_PATTERN  = [65, 50, 45, 35, 20, 30, 45, 60]
 
-# pausas importantes para tu petición:
 # mover -> pausa -> leer -> pausa -> leer
 SERVO_SETTLE_TIME = 0.06
-READ_BETWEEN_SAMPLES = 0.06
 POST_READ_PAUSE = 0.04
 SENSOR_INTERLEAVE_PAUSE = 0.06
 
@@ -58,6 +58,19 @@ SENSOR_INTERLEAVE_PAUSE = 0.06
 # =============================
 MAX_AXIS = 15
 MAX_STEPS = 10
+
+# =============================
+# TIEMPO DE "QUEDARSE" SEGÚN TOUCH
+# min 3, max 6
+# =============================
+TOUCH_HOLD_SECONDS = {
+    21: 3.5,  # curioso
+    25: 4.5,  # nervioso
+    20: 5.5,  # cauto
+    12: 6.0,  # erratico
+}
+
+DEFAULT_HOLD_SECONDS = 4.0
 
 # =============================
 # PERSONALIDAD POR TOUCH PIN
@@ -137,6 +150,7 @@ time.sleep(0.8)
 
 # =============================
 # SERVO PCA9685
+# NO CAMBIAR CLASE (como pediste)
 # =============================
 def map_value(value, from_low, from_high, to_low, to_high):
     """Map a value from one range to another."""
@@ -177,7 +191,6 @@ class Servo:
             self.pwm_40.set_pwm(i + 8, 4096, 4096)
 
 
-
 servo = Servo()
 
 # =============================
@@ -216,6 +229,7 @@ servo_angles = {
 }
 
 touch_active = False
+state_lock = threading.Lock()
 
 # =============================
 # SOCKET MOVIMIENTO
@@ -268,6 +282,7 @@ def do_shake_for_touch(pin):
 
 # =============================
 # ULTRASONIC MANUAL (ESTABLE)
+# NO DistanceSensor
 # =============================
 def measure_distance(trigger_pin, echo_pin, timeout=0.03):
     """
@@ -276,11 +291,14 @@ def measure_distance(trigger_pin, echo_pin, timeout=0.03):
     GPIO.output(trigger_pin, False)
     time.sleep(0.0002)
 
+    # pulso trigger 10us
     GPIO.output(trigger_pin, True)
     time.sleep(0.00001)
     GPIO.output(trigger_pin, False)
 
     start_wait = time.time()
+    pulse_start = None
+    pulse_end = None
 
     # esperar subida
     while GPIO.input(echo_pin) == 0:
@@ -294,6 +312,9 @@ def measure_distance(trigger_pin, echo_pin, timeout=0.03):
         if pulse_end - pulse_start > timeout:
             return None
 
+    if pulse_start is None or pulse_end is None:
+        return None
+
     pulse_duration = pulse_end - pulse_start
     distance = (pulse_duration * 34300) / 2.0
 
@@ -301,26 +322,6 @@ def measure_distance(trigger_pin, echo_pin, timeout=0.03):
         return None
 
     return round(distance, 1)
-
-def read_filtered(trigger_pin, echo_pin, samples=2):
-    """
-    Pocas muestras para mantener respuesta rápida.
-    Mover -> pausa -> leer -> pausa -> leer
-    y usar mediana.
-    """
-    vals = []
-
-    for _ in range(samples):
-        d = measure_distance(trigger_pin, echo_pin)
-        if d is not None:
-            vals.append(d)
-        time.sleep(READ_BETWEEN_SAMPLES)
-
-    if not vals:
-        return None
-
-    vals.sort()
-    return vals[len(vals) // 2]
 
 def get_sensor_cfg(name):
     for cfg in ULTRASONICS:
@@ -394,7 +395,8 @@ def scan_sensor(name, angle):
 
     # mover servo
     servo.set_angle(ch, angle)
-    servo_angles[name] = angle
+    with state_lock:
+        servo_angles[name] = angle
 
     # pausa mecánica
     time.sleep(SERVO_SETTLE_TIME)
@@ -408,8 +410,7 @@ def scan_sensor(name, angle):
     # leer 2
     d2 = measure_distance(cfg["trigger"], cfg["echo"])
 
-    # combinar
-    vals = [v for v in [d1, d2] if v is not None]
+    vals = [v for v in (d1, d2) if v is not None]
 
     if not vals:
         dist = None
@@ -417,40 +418,52 @@ def scan_sensor(name, angle):
         vals.sort()
         dist = vals[len(vals) // 2]
 
-    distances_state[name] = dist
+    with state_lock:
+        distances_state[name] = dist
+
     return dist
 
 # =============================
 # LOOP DE ESCANEO DE SERVOS + ULTRASONICS
 # SOLO FRONT Y REAR
+# sigue corriendo incluso durante "espera" después de move
 # =============================
 def ultrasonic_loop():
-    global distances_state
-
     idx = 0
 
     while True:
-        if not touch_active:
+        with state_lock:
+            active = touch_active
+
+        if not active:
             # reposo: ambos al centro
             if servo_angles["front"] != SERVO_CENTER:
                 servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
-                servo_angles["front"] = SERVO_CENTER
+                with state_lock:
+                    servo_angles["front"] = SERVO_CENTER
 
             if servo_angles["rear"] != SERVO_CENTER:
                 servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
-                servo_angles["rear"] = SERVO_CENTER
+                with state_lock:
+                    servo_angles["rear"] = SERVO_CENTER
 
+            # aún en reposo lee centrado para mantener estado fresco
+            d_front = scan_sensor("front", SERVO_CENTER)
+            time.sleep(SENSOR_INTERLEAVE_PAUSE)
+            d_rear = scan_sensor("rear", SERVO_CENTER)
+
+            print(f"📡 idle front={d_front}@{servo_angles['front']}° | rear={d_rear}@{servo_angles['rear']}°")
             time.sleep(0.10)
             continue
 
-        # FRONT: mover -> pausa -> leer -> pausa -> leer
+        # FRONT
         fa = FRONT_PATTERN[idx % len(FRONT_PATTERN)]
         d_front = scan_sensor("front", fa)
 
-        # pequeña separación para evitar eco cruzado
+        # evitar eco cruzado
         time.sleep(SENSOR_INTERLEAVE_PAUSE)
 
-        # REAR: mover -> pausa -> leer -> pausa -> leer
+        # REAR
         ra = REAR_PATTERN[idx % len(REAR_PATTERN)]
         d_rear = scan_sensor("rear", ra)
 
@@ -477,24 +490,28 @@ def compute_space_vector(pin):
     """
     behavior = TOUCH_BEHAVIOR[pin]
 
+    with state_lock:
+        d_front = distances_state["front"]
+        a_front = servo_angles["front"]
+        d_rear = distances_state["rear"]
+        a_rear = servo_angles["rear"]
+
     total_x = 0.0
     total_y = 0.0
     used = 0
 
     # FRONT
-    d_front = distances_state["front"]
     w_front = distance_to_weight(d_front)
     if w_front is not None:
-        vx, vy = front_vector_from_angle(servo_angles["front"])
+        vx, vy = front_vector_from_angle(a_front)
         total_x += vx * w_front
         total_y += vy * w_front
         used += 1
 
     # REAR
-    d_rear = distances_state["rear"]
     w_rear = distance_to_weight(d_rear)
     if w_rear is not None:
-        vx, vy = rear_vector_from_angle(servo_angles["rear"])
+        vx, vy = rear_vector_from_angle(a_rear)
         total_x += vx * w_rear
         total_y += vy * w_rear
         used += 1
@@ -511,22 +528,21 @@ def compute_space_vector(pin):
 
 # =============================
 # EVALÚA SI EL VECTOR ACTUAL ESTÁ BLOQUEADO
-# SOLO FRONT / REAR (por eje Y dominante)
+# SOLO FRONT / REAR (por signo de Y)
 # =============================
 def is_vector_blocked(x, y):
     """
-    Como left/right están descartados, evaluamos principalmente el eje Y.
     Si el vector quiere ir hacia adelante, revisa front.
     Si quiere ir hacia atrás, revisa rear.
     """
     if x is None or y is None:
         return True
 
-    # domina adelante/atrás o no, pero igual resolvemos por el signo de Y
-    if y >= 0:
-        d = distances_state["front"]
-    else:
-        d = distances_state["rear"]
+    with state_lock:
+        if y >= 0:
+            d = distances_state["front"]
+        else:
+            d = distances_state["rear"]
 
     if d is None:
         return True
@@ -573,6 +589,81 @@ def vector_to_move(pin, vx, vy):
     return x, y, steps
 
 # =============================
+# TIEMPO DE ESPERA SEGÚN TOUCH
+# 3 a 6 s, pero monitoreando ultrasonics
+# =============================
+def get_hold_seconds(pin):
+    return clamp(TOUCH_HOLD_SECONDS.get(pin, DEFAULT_HOLD_SECONDS), 3.0, 6.0)
+
+def hold_and_monitor(pin, last_move_vector):
+    """
+    Después de send_move:
+    - espera 3..6s según touch
+    - sigue leyendo ultrasonics (el thread sigue activo)
+    - si aparece obstáculo en la dirección actual:
+        STOP
+        salir antes para recalcular
+    - si se suelta touch:
+        STOP y salir
+    """
+    hold_s = get_hold_seconds(pin)
+    start = time.time()
+
+    print(f"⏳ hold {hold_s:.1f}s (monitoring obstacles)")
+
+    while (time.time() - start) < hold_s:
+        # touch sigue activo?
+        active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
+        if not active_pins or active_pins[0] != pin:
+            print("✋ Touch released during hold")
+            send_stop()
+            return False  # touch terminó
+
+        # obstáculo apareció en la dirección actual?
+        if is_vector_blocked(last_move_vector[0], last_move_vector[1]):
+            print("🚧 Obstacle detected during hold -> STOP + recalc")
+            send_stop()
+            return True  # sigue touch, pero hay que recalcular
+
+        time.sleep(RECHECK_INTERVAL)
+
+    return True  # terminó hold normal y sigue touch
+
+# =============================
+# EJECUTA UN CICLO DE MOVIMIENTO
+# devuelve:
+#   False => touch terminó
+#   True  => touch sigue, continuar
+# =============================
+def do_move_cycle(pin):
+    vx, vy, mag = compute_space_vector(pin)
+
+    with state_lock:
+        df = distances_state["front"]
+        af = servo_angles["front"]
+        dr = distances_state["rear"]
+        ar = servo_angles["rear"]
+
+    print(f"📡 dist front={df}@{af}° | rear={dr}@{ar}°")
+
+    if vx is None:
+        # sin lecturas válidas => exploratorio
+        behavior = TOUCH_BEHAVIOR[pin]
+        x = random.uniform(-behavior["base_speed"], behavior["base_speed"])
+        y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
+        steps = clamp(behavior["steps"], 1, MAX_STEPS)
+        print("📡 Sin lecturas válidas -> exploración")
+        send_move(x, y, steps)
+        return hold_and_monitor(pin, (x, y)), (x, y), time.time()
+
+    x, y, steps = vector_to_move(pin, vx, vy)
+    print(f"🧭 space_vector=({vx:.2f}, {vy:.2f}) mag={mag:.2f} -> move=({x:.1f}, {y:.1f}) steps={steps}")
+    send_move(x, y, steps)
+
+    still_active = hold_and_monitor(pin, (x, y))
+    return still_active, (x, y), time.time()
+
+# =============================
 # LOOP PRINCIPAL
 # =============================
 touching_pin = None
@@ -584,7 +675,7 @@ try:
     while True:
         # OJO:
         # con PUD_UP normalmente "presionado" = LOW (False)
-        # como tu código original usaba True, lo dejo igual
+        # pero como tu cableado/código original usa True, lo conservo
         active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
 
         # ---------- TOUCH ON ----------
@@ -592,11 +683,13 @@ try:
             pin = active_pins[0]
 
             if touching_pin != pin:
-                print(f"🖐 Touch ON {pin} ({TOUCH_BEHAVIOR[pin]['name']})")
+                behavior_name = TOUCH_BEHAVIOR.get(pin, {}).get("name", "desconocido")
+                print(f"🖐 Touch ON {pin} ({behavior_name})")
                 notify_tacto_server(pin)
 
                 touching_pin = pin
-                touch_active = True
+                with state_lock:
+                    touch_active = True
                 did_shake = False
                 last_move_vector = (None, None)
 
@@ -614,32 +707,19 @@ try:
                 print("🚧 Dirección actual bloqueada, recalculando...")
                 need_move = True
             elif time.time() - last_move_time >= RECHECK_INTERVAL:
+                # aunque esto sea corto, realmente el hold ya administra el tiempo largo
                 need_move = True
 
             if need_move:
-                vx, vy, mag = compute_space_vector(pin)
+                still_active, last_move_vector, last_move_time = do_move_cycle(pin)
 
-                print(
-                    f"📡 dist front={distances_state['front']}@{servo_angles['front']}° | "
-                    f"rear={distances_state['rear']}@{servo_angles['rear']}°"
-                )
-
-                if vx is None:
-                    # sin lecturas válidas => exploratorio
-                    behavior = TOUCH_BEHAVIOR[pin]
-                    x = random.uniform(-behavior["base_speed"], behavior["base_speed"])
-                    y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
-                    steps = clamp(behavior["steps"], 1, MAX_STEPS)
-                    print("📡 Sin lecturas válidas -> exploración")
-                    send_move(x, y)
-                    last_move_vector = (x, y)
-                else:
-                    x, y, steps = vector_to_move(pin, vx, vy)
-                    print(f"🧭 space_vector=({vx:.2f}, {vy:.2f}) mag={mag:.2f} -> move=({x:.1f}, {y:.1f}) steps={steps}")
-                    send_move(x, y, steps)
-                    last_move_vector = (x, y)
-
-                last_move_time = time.time()
+                if not still_active:
+                    # touch terminó durante hold
+                    touching_pin = None
+                    with state_lock:
+                        touch_active = False
+                    did_shake = False
+                    last_move_vector = (None, None)
 
         # ---------- TOUCH OFF ----------
         else:
@@ -648,7 +728,8 @@ try:
                 send_stop()
 
             touching_pin = None
-            touch_active = False
+            with state_lock:
+                touch_active = False
             did_shake = False
             last_move_vector = (None, None)
 
@@ -668,9 +749,12 @@ finally:
     sock.close()
 
     # regresar servos al centro
-    servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
-    servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
-    time.sleep(0.1)
-    servo.relax()
+    try:
+        servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
+        servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
+        time.sleep(0.1)
+        servo.relax()
+    except:
+        pass
 
     GPIO.cleanup()
