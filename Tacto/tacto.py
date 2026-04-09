@@ -17,7 +17,7 @@ SERVER_IP = "127.0.0.1"
 CMD_PORT = 5002
 
 # Touch
-TOUCH_PINS = [21]  # si luego agregas más, el código ya soporta personalidad
+TOUCH_PINS = [21]  # puedes volver a agregar 25,20,12 si quieres
 TACTO_SERVER = "http://192.168.0.82:5822/touch"
 
 # Ultrasonicos (SOLO FRONT Y REAR)
@@ -28,9 +28,7 @@ ULTRASONICS = [
 
 MAX_DISTANCE_CM = 300.0
 OBSTACLE_CM = 25.0
-
-# re-check durante movimiento/espera
-RECHECK_INTERVAL = 0.12
+RECHECK_INTERVAL = 0.12    # evita saturar server / recalcular demasiado rápido
 
 # =============================
 # SERVOS DE ULTRASONIC
@@ -50,6 +48,7 @@ REAR_PATTERN  = [65, 50, 45, 35, 20, 30, 45, 60]
 
 # mover -> pausa -> leer -> pausa -> leer
 SERVO_SETTLE_TIME = 0.06
+READ_BETWEEN_SAMPLES = 0.06
 POST_READ_PAUSE = 0.04
 SENSOR_INTERLEAVE_PAUSE = 0.06
 
@@ -60,20 +59,8 @@ MAX_AXIS = 15
 MAX_STEPS = 10
 
 # =============================
-# TIEMPO DE "QUEDARSE" SEGÚN TOUCH
-# min 3, max 6
-# =============================
-TOUCH_HOLD_SECONDS = {
-    21: 3.5,  # curioso
-    25: 4.5,  # nervioso
-    20: 5.5,  # cauto
-    12: 6.0,  # erratico
-}
-
-DEFAULT_HOLD_SECONDS = 4.0
-
-# =============================
 # PERSONALIDAD POR TOUCH PIN
+# AQUI agregué duración de sesión por touch
 # =============================
 TOUCH_BEHAVIOR = {
     21: {
@@ -82,6 +69,8 @@ TOUCH_BEHAVIOR = {
         "steps": 6,
         "jitter": 2,
         "explore": 1.0,
+        "session_min": 3.0,
+        "session_max": 4.5,
         "shake": [
             "CMD_POSITION#4#-2#0",
             "CMD_POSITION#3#1#0",
@@ -95,6 +84,8 @@ TOUCH_BEHAVIOR = {
         "steps": 9,
         "jitter": 4,
         "explore": 1.4,
+        "session_min": 4.0,
+        "session_max": 6.0,
         "shake": [
             "CMD_POSITION#-3#0#0",
             "CMD_POSITION#3#0#0",
@@ -108,6 +99,8 @@ TOUCH_BEHAVIOR = {
         "steps": 4,
         "jitter": 1,
         "explore": 0.8,
+        "session_min": 3.0,
+        "session_max": 4.0,
         "shake": [
             "CMD_POSITION#0#3#0",
             "CMD_POSITION#0#-2#0",
@@ -121,6 +114,8 @@ TOUCH_BEHAVIOR = {
         "steps": 10,
         "jitter": 5,
         "explore": 1.8,
+        "session_min": 4.0,
+        "session_max": 6.0,
         "shake": [
             "CMD_POSITION#2#2#0",
             "CMD_POSITION#-2#-2#0",
@@ -150,7 +145,6 @@ time.sleep(0.8)
 
 # =============================
 # SERVO PCA9685
-# NO CAMBIAR CLASE (como pediste)
 # =============================
 def map_value(value, from_low, from_high, to_low, to_high):
     """Map a value from one range to another."""
@@ -190,7 +184,6 @@ class Servo:
             self.pwm_40.set_pwm(i, 4096, 4096)
             self.pwm_40.set_pwm(i + 8, 4096, 4096)
 
-
 servo = Servo()
 
 # =============================
@@ -229,7 +222,6 @@ servo_angles = {
 }
 
 touch_active = False
-state_lock = threading.Lock()
 
 # =============================
 # SOCKET MOVIMIENTO
@@ -282,7 +274,6 @@ def do_shake_for_touch(pin):
 
 # =============================
 # ULTRASONIC MANUAL (ESTABLE)
-# NO DistanceSensor
 # =============================
 def measure_distance(trigger_pin, echo_pin, timeout=0.03):
     """
@@ -291,7 +282,6 @@ def measure_distance(trigger_pin, echo_pin, timeout=0.03):
     GPIO.output(trigger_pin, False)
     time.sleep(0.0002)
 
-    # pulso trigger 10us
     GPIO.output(trigger_pin, True)
     time.sleep(0.00001)
     GPIO.output(trigger_pin, False)
@@ -332,7 +322,6 @@ def get_sensor_cfg(name):
 # =============================
 # CONVERSIÓN DE DISTANCIA A PESO
 # más distancia = más "atracción" hacia esa dirección
-# si está muy cerca del obstáculo = casi nulo
 # =============================
 def distance_to_weight(d):
     if d is None or d <= 0:
@@ -395,8 +384,7 @@ def scan_sensor(name, angle):
 
     # mover servo
     servo.set_angle(ch, angle)
-    with state_lock:
-        servo_angles[name] = angle
+    servo_angles[name] = angle
 
     # pausa mecánica
     time.sleep(SERVO_SETTLE_TIME)
@@ -410,7 +398,7 @@ def scan_sensor(name, angle):
     # leer 2
     d2 = measure_distance(cfg["trigger"], cfg["echo"])
 
-    vals = [v for v in (d1, d2) if v is not None]
+    vals = [v for v in [d1, d2] if v is not None]
 
     if not vals:
         dist = None
@@ -418,41 +406,27 @@ def scan_sensor(name, angle):
         vals.sort()
         dist = vals[len(vals) // 2]
 
-    with state_lock:
-        distances_state[name] = dist
-
+    distances_state[name] = dist
     return dist
 
 # =============================
 # LOOP DE ESCANEO DE SERVOS + ULTRASONICS
 # SOLO FRONT Y REAR
-# sigue corriendo incluso durante "espera" después de move
 # =============================
 def ultrasonic_loop():
     idx = 0
 
     while True:
-        with state_lock:
-            active = touch_active
-
-        if not active:
+        if not touch_active:
             # reposo: ambos al centro
             if servo_angles["front"] != SERVO_CENTER:
                 servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
-                with state_lock:
-                    servo_angles["front"] = SERVO_CENTER
+                servo_angles["front"] = SERVO_CENTER
 
             if servo_angles["rear"] != SERVO_CENTER:
                 servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
-                with state_lock:
-                    servo_angles["rear"] = SERVO_CENTER
+                servo_angles["rear"] = SERVO_CENTER
 
-            # aún en reposo lee centrado para mantener estado fresco
-            d_front = scan_sensor("front", SERVO_CENTER)
-            time.sleep(SENSOR_INTERLEAVE_PAUSE)
-            d_rear = scan_sensor("rear", SERVO_CENTER)
-
-            print(f"📡 idle front={d_front}@{servo_angles['front']}° | rear={d_rear}@{servo_angles['rear']}°")
             time.sleep(0.10)
             continue
 
@@ -460,7 +434,7 @@ def ultrasonic_loop():
         fa = FRONT_PATTERN[idx % len(FRONT_PATTERN)]
         d_front = scan_sensor("front", fa)
 
-        # evitar eco cruzado
+        # separación para evitar eco cruzado
         time.sleep(SENSOR_INTERLEAVE_PAUSE)
 
         # REAR
@@ -483,35 +457,26 @@ threading.Thread(target=ultrasonic_loop, daemon=True).start()
 # SOLO FRONT + REAR
 # =============================
 def compute_space_vector(pin):
-    """
-    Combina SOLO front y rear:
-    - front según ángulo actual del servo front
-    - rear según ángulo actual del servo rear
-    """
     behavior = TOUCH_BEHAVIOR[pin]
-
-    with state_lock:
-        d_front = distances_state["front"]
-        a_front = servo_angles["front"]
-        d_rear = distances_state["rear"]
-        a_rear = servo_angles["rear"]
 
     total_x = 0.0
     total_y = 0.0
     used = 0
 
     # FRONT
+    d_front = distances_state["front"]
     w_front = distance_to_weight(d_front)
     if w_front is not None:
-        vx, vy = front_vector_from_angle(a_front)
+        vx, vy = front_vector_from_angle(servo_angles["front"])
         total_x += vx * w_front
         total_y += vy * w_front
         used += 1
 
     # REAR
+    d_rear = distances_state["rear"]
     w_rear = distance_to_weight(d_rear)
     if w_rear is not None:
-        vx, vy = rear_vector_from_angle(a_rear)
+        vx, vy = rear_vector_from_angle(servo_angles["rear"])
         total_x += vx * w_rear
         total_y += vy * w_rear
         used += 1
@@ -531,18 +496,13 @@ def compute_space_vector(pin):
 # SOLO FRONT / REAR (por signo de Y)
 # =============================
 def is_vector_blocked(x, y):
-    """
-    Si el vector quiere ir hacia adelante, revisa front.
-    Si quiere ir hacia atrás, revisa rear.
-    """
     if x is None or y is None:
         return True
 
-    with state_lock:
-        if y >= 0:
-            d = distances_state["front"]
-        else:
-            d = distances_state["rear"]
+    if y >= 0:
+        d = distances_state["front"]
+    else:
+        d = distances_state["rear"]
 
     if d is None:
         return True
@@ -589,149 +549,119 @@ def vector_to_move(pin, vx, vy):
     return x, y, steps
 
 # =============================
-# TIEMPO DE ESPERA SEGÚN TOUCH
-# 3 a 6 s, pero monitoreando ultrasonics
+# LECTURA DE TOUCH
+# IMPORTANTE:
+# tu hardware parece estar "activo = True"
+# por eso lo dejo así, igual que tu código original
 # =============================
-def get_hold_seconds(pin):
-    return clamp(TOUCH_HOLD_SECONDS.get(pin, DEFAULT_HOLD_SECONDS), 3.0, 6.0)
-
-def hold_and_monitor(pin, last_move_vector):
-    """
-    Después de send_move:
-    - espera 3..6s según touch
-    - sigue leyendo ultrasonics (el thread sigue activo)
-    - si aparece obstáculo en la dirección actual:
-        STOP
-        salir antes para recalcular
-    - si se suelta touch:
-        STOP y salir
-    """
-    hold_s = get_hold_seconds(pin)
-    start = time.time()
-
-    print(f"⏳ hold {hold_s:.1f}s (monitoring obstacles)")
-
-    while (time.time() - start) < hold_s:
-        # touch sigue activo?
-        active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
-        if not active_pins or active_pins[0] != pin:
-            print("✋ Touch released during hold")
-            send_stop()
-            return False  # touch terminó
-
-        # obstáculo apareció en la dirección actual?
-        if is_vector_blocked(last_move_vector[0], last_move_vector[1]):
-            print("🚧 Obstacle detected during hold -> STOP + recalc")
-            send_stop()
-            return True  # sigue touch, pero hay que recalcular
-
-        time.sleep(RECHECK_INTERVAL)
-
-    return True  # terminó hold normal y sigue touch
+def get_active_touch_pin():
+    active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
+    return active_pins[0] if active_pins else None
 
 # =============================
-# EJECUTA UN CICLO DE MOVIMIENTO
-# devuelve:
-#   False => touch terminó
-#   True  => touch sigue, continuar
+# SESIÓN DE EXPLORACIÓN POR TOUCH
+# Un touch => una sola sesión (3-6 s)
+# NO se re-dispara mientras sigue tocado
+# Sigue leyendo ultrasonic por hilo paralelo
 # =============================
-def do_move_cycle(pin):
-    vx, vy, mag = compute_space_vector(pin)
+def run_touch_session(pin):
+    global touch_active
 
-    with state_lock:
-        df = distances_state["front"]
-        af = servo_angles["front"]
-        dr = distances_state["rear"]
-        ar = servo_angles["rear"]
+    behavior = TOUCH_BEHAVIOR[pin]
+    session_duration = random.uniform(
+        behavior.get("session_min", 3.0),
+        behavior.get("session_max", 6.0)
+    )
 
-    print(f"📡 dist front={df}@{af}° | rear={dr}@{ar}°")
+    print(f"🖐 Touch ON {pin} ({behavior['name']}) | sesión {session_duration:.2f}s")
+    notify_tacto_server(pin)
 
-    if vx is None:
-        # sin lecturas válidas => exploratorio
-        behavior = TOUCH_BEHAVIOR[pin]
-        x = random.uniform(-behavior["base_speed"], behavior["base_speed"])
-        y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
-        steps = clamp(behavior["steps"], 1, MAX_STEPS)
-        print("📡 Sin lecturas válidas -> exploración")
-        send_move(x, y, steps)
-        return hold_and_monitor(pin, (x, y)), (x, y), time.time()
+    # activar escaneo ultrasonic
+    touch_active = True
 
-    x, y, steps = vector_to_move(pin, vx, vy)
-    print(f"🧭 space_vector=({vx:.2f}, {vy:.2f}) mag={mag:.2f} -> move=({x:.1f}, {y:.1f}) steps={steps}")
-    send_move(x, y, steps)
+    # cadera inicial antes de moverse
+    do_shake_for_touch(pin)
+    time.sleep(0.08)
 
-    still_active = hold_and_monitor(pin, (x, y))
-    return still_active, (x, y), time.time()
+    session_start = time.time()
+    last_move_time = 0.0
+    last_move_vector = (None, None)
+
+    # Mantener sesión aunque el dedo siga o ya no siga:
+    # la idea es cumplir su exploración completa
+    while (time.time() - session_start) < session_duration:
+        need_move = False
+
+        if last_move_vector[0] is None:
+            need_move = True
+        elif is_vector_blocked(last_move_vector[0], last_move_vector[1]):
+            print("🚧 Dirección actual bloqueada, recalculando...")
+            need_move = True
+        elif time.time() - last_move_time >= RECHECK_INTERVAL:
+            need_move = True
+
+        if need_move:
+            vx, vy, mag = compute_space_vector(pin)
+
+            print(
+                f"📡 dist front={distances_state['front']}@{servo_angles['front']}° | "
+                f"rear={distances_state['rear']}@{servo_angles['rear']}°"
+            )
+
+            if vx is None:
+                # sin lecturas válidas => exploratorio
+                x = random.uniform(-behavior["base_speed"], behavior["base_speed"])
+                y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
+                steps = clamp(behavior["steps"], 1, MAX_STEPS)
+                print("📡 Sin lecturas válidas -> exploración")
+                send_move(x, y)
+                last_move_vector = (x, y)
+            else:
+                x, y, steps = vector_to_move(pin, vx, vy)
+                print(
+                    f"🧭 space_vector=({vx:.2f}, {vy:.2f}) "
+                    f"mag={mag:.2f} -> move=({x:.1f}, {y:.1f}) steps={steps}"
+                )
+                send_move(x, y)
+                last_move_vector = (x, y)
+
+            last_move_time = time.time()
+
+        # pequeño sleep para no saturar CPU
+        time.sleep(0.03)
+
+    print("⏹ Fin de sesión touch -> STOP")
+    send_stop()
+
+    # desactivar escaneo activo (servos volverán al centro por el hilo)
+    touch_active = False
 
 # =============================
 # LOOP PRINCIPAL
+# Evita re-disparos:
+# - solo inicia sesión en flanco de activación
+# - luego espera liberación del touch antes de permitir otro
 # =============================
-touching_pin = None
-did_shake = False
-last_move_time = 0.0
-last_move_vector = (None, None)
+touch_latched = False  # True = ya se disparó una sesión y aún no se ha soltado
 
 try:
     while True:
-        # OJO:
-        # con PUD_UP normalmente "presionado" = LOW (False)
-        # pero como tu cableado/código original usa True, lo conservo
-        active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
+        active_pin = get_active_touch_pin()
 
-        # ---------- TOUCH ON ----------
-        if active_pins:
-            pin = active_pins[0]
+        # ---------- NUEVO TOUCH (solo si no está latched) ----------
+        if active_pin is not None and not touch_latched:
+            touch_latched = True
 
-            if touching_pin != pin:
-                behavior_name = TOUCH_BEHAVIOR.get(pin, {}).get("name", "desconocido")
-                print(f"🖐 Touch ON {pin} ({behavior_name})")
-                notify_tacto_server(pin)
+            # Ejecuta una sola sesión completa
+            run_touch_session(active_pin)
 
-                touching_pin = pin
-                with state_lock:
-                    touch_active = True
-                did_shake = False
-                last_move_vector = (None, None)
+            # después de la sesión, NO permitir otro touch hasta soltar el sensor
+            print("🔒 Esperando liberación del touch para permitir nuevo disparo...")
 
-            # conserva movimientos de cadera iniciales ANTES de moverte
-            if not did_shake:
-                do_shake_for_touch(pin)
-                did_shake = True
-                time.sleep(0.08)
-
-            need_move = False
-
-            if last_move_vector[0] is None:
-                need_move = True
-            elif is_vector_blocked(last_move_vector[0], last_move_vector[1]):
-                print("🚧 Dirección actual bloqueada, recalculando...")
-                need_move = True
-            elif time.time() - last_move_time >= RECHECK_INTERVAL:
-                # aunque esto sea corto, realmente el hold ya administra el tiempo largo
-                need_move = True
-
-            if need_move:
-                still_active, last_move_vector, last_move_time = do_move_cycle(pin)
-
-                if not still_active:
-                    # touch terminó durante hold
-                    touching_pin = None
-                    with state_lock:
-                        touch_active = False
-                    did_shake = False
-                    last_move_vector = (None, None)
-
-        # ---------- TOUCH OFF ----------
-        else:
-            if touching_pin is not None:
-                print("✋ Touch OFF → STOP")
-                send_stop()
-
-            touching_pin = None
-            with state_lock:
-                touch_active = False
-            did_shake = False
-            last_move_vector = (None, None)
+        # ---------- LIBERACIÓN ----------
+        elif active_pin is None and touch_latched:
+            touch_latched = False
+            print("🔓 Touch liberado, listo para siguiente sesión")
 
         time.sleep(0.03)
 
@@ -746,7 +676,10 @@ finally:
     except:
         pass
 
-    sock.close()
+    try:
+        sock.close()
+    except:
+        pass
 
     # regresar servos al centro
     try:
