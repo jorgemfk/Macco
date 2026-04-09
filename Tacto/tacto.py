@@ -4,12 +4,10 @@ import time
 import threading
 import queue
 import requests
-import warnings
 import math
 import random
 
 import RPi.GPIO as GPIO
-from gpiozero import DistanceSensor, PWMSoftwareFallback, DistanceSensorNoEcho
 from pca9685 import PCA9685
 
 # =============================
@@ -19,26 +17,23 @@ SERVER_IP = "127.0.0.1"
 CMD_PORT = 5002
 
 # Touch
-TOUCH_PINS = [21, 25, 20, 12]
+TOUCH_PINS = [21]#, 25, 20, 12]
 TACTO_SERVER = "http://192.168.0.82:5822/touch"
 
-# Ultrasonicos
+# Ultrasonicos (SOLO FRONT Y REAR)
 ULTRASONICS = [
     {"trigger": 27, "echo": 22, "name": "front"},  # servo canal 1
-    {"trigger": 33, "echo": 35, "name": "left"},   # fijo X-
-    {"trigger": 37, "echo": 36, "name": "right"},  # fijo X+
-    {"trigger": 29, "echo": 31, "name": "rear"},   # servo canal 2
+    {"trigger": 5,  "echo": 6,  "name": "rear"},   # servo canal 2
 ]
 
-MAX_DISTANCE = 3.0         # metros
 MAX_DISTANCE_CM = 300.0
 OBSTACLE_CM = 25.0
 RECHECK_INTERVAL = 0.12    # evita saturar server
 
 # =============================
 # SERVOS DE ULTRASONIC
-# front = canal 1
-# rear  = canal 2
+# front = canal 1 (pwm_41)
+# rear  = canal 2 (pwm_41)
 # =============================
 FRONT_SERVO_CHANNEL = 1
 REAR_SERVO_CHANNEL = 2
@@ -47,17 +42,16 @@ SERVO_CENTER = 45
 SERVO_MIN = 0
 SERVO_MAX = 90
 
-# Para front:
-# 45 = Y+
-# <45 = sesgo X-
-# >45 = sesgo X+
-#
-# Para rear:
-# 45 = Y-
-# <45 = sesgo X+
-# >45 = sesgo X-
-#
-# (porque está “viendo hacia atrás”, invertido respecto a front)
+# Patrones de barrido
+FRONT_PATTERN = [20, 35, 45, 60, 70, 55, 45, 30]
+REAR_PATTERN  = [65, 50, 45, 35, 20, 30, 45, 60]
+
+# pausas importantes para tu petición:
+# mover -> pausa -> leer -> pausa -> leer
+SERVO_SETTLE_TIME = 0.06
+READ_BETWEEN_SAMPLES = 0.06
+POST_READ_PAUSE = 0.04
+SENSOR_INTERLEAVE_PAUSE = 0.06
 
 # =============================
 # LÍMITES MOVIMIENTO ROBOT
@@ -127,62 +121,62 @@ TOUCH_BEHAVIOR = {
 # GPIO SETUP
 # =============================
 GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+# Touch
 for pin in TOUCH_PINS:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-# =============================
-# ULTRASONIC CLASS
-# =============================
-class Ultrasonic:
-    def __init__(self, trigger_pin: int, echo_pin: int, max_distance: float = 3.0):
-        warnings.filterwarnings("ignore", category=DistanceSensorNoEcho)
-        warnings.filterwarnings("ignore", category=PWMSoftwareFallback)
+# Ultrasonic GPIO
+for cfg in ULTRASONICS:
+    GPIO.setup(cfg["trigger"], GPIO.OUT)
+    GPIO.setup(cfg["echo"], GPIO.IN)
+    GPIO.output(cfg["trigger"], False)
 
-        self.sensor = DistanceSensor(
-            trigger=trigger_pin,
-            echo=echo_pin,
-            max_distance=max_distance
-        )
-
-    def get_distance(self):
-        try:
-            return round(self.sensor.distance * 100, 1)
-        except RuntimeWarning:
-            return None
-        except Exception:
-            return None
-
-    def close(self):
-        self.sensor.close()
+time.sleep(0.8)
 
 # =============================
 # SERVO PCA9685
 # =============================
 def map_value(value, from_low, from_high, to_low, to_high):
+    """Map a value from one range to another."""
     return (to_high - to_low) * (value - from_low) / (from_high - from_low) + to_low
 
 class Servo:
     def __init__(self):
-        self.pwm_40 = PCA9685(0x40, debug=False)
-        self.pwm_41 = PCA9685(0x41, debug=False)
+        self.pwm_40 = PCA9685(0x40, debug=True)
+        self.pwm_41 = PCA9685(0x41, debug=True)
+        # Set the cycle frequency of PWM to 50 Hz
         self.pwm_40.set_pwm_freq(50)
+        time.sleep(0.01)
         self.pwm_41.set_pwm_freq(50)
-        time.sleep(0.02)
+        time.sleep(0.01)
 
     def set_angle(self, channel, angle):
-        angle = max(0, min(180, angle))
-        duty = map_value(angle, 0, 180, 500, 2500)
-        duty = map_value(duty, 0, 20000, 0, 4095)
-
+        """
+        Convert the input angle to the value of PCA9685 and set the servo angle.
+        
+        :param channel: Servo channel (0-31)
+        :param angle: Angle in degrees (0-180)
+        """
         if channel < 16:
-            self.pwm_41.set_pwm(channel, 0, int(duty))
-        else:
-            self.pwm_40.set_pwm(channel - 16, 0, int(duty))
+            duty_cycle = map_value(angle, 0, 180, 500, 2500)
+            duty_cycle = map_value(duty_cycle, 0, 20000, 0, 4095)
+            self.pwm_41.set_pwm(channel, 0, int(duty_cycle))
+        elif channel >= 16 and channel < 32:
+            channel -= 16
+            duty_cycle = map_value(angle, 0, 180, 500, 2500)
+            duty_cycle = map_value(duty_cycle, 0, 20000, 0, 4095)
+            self.pwm_40.set_pwm(channel, 0, int(duty_cycle))
 
     def relax(self):
-        for i in range(16):
-            self.pwm_41.set_pwm(i, 4096, 4096)
+        """Relax all servos by setting their PWM values to 4096."""
+        for i in range(8):
+            self.pwm_41.set_pwm(i + 8, 4096, 4096)
             self.pwm_40.set_pwm(i, 4096, 4096)
+            self.pwm_40.set_pwm(i + 8, 4096, 4096)
+
+
 
 servo = Servo()
 
@@ -197,6 +191,7 @@ def tacto_worker():
         if pin is None:
             break
         try:
+            # conserva info touch al otro server
             requests.post(TACTO_SERVER, json={"pin": pin}, timeout=0.3)
         except Exception as e:
             print("⚠ tacto server:", e)
@@ -208,22 +203,13 @@ def notify_tacto_server(pin):
     tacto_queue.put(pin)
 
 # =============================
-# ULTRASONIC SETUP
+# ESTADO GLOBAL DE ULTRASONIC
 # =============================
-ultrasonics = {
-    cfg["name"]: Ultrasonic(cfg["trigger"], cfg["echo"], MAX_DISTANCE)
-    for cfg in ULTRASONICS
-}
-
-# Estado de distancias
 distances_state = {
     "front": None,
-    "left": None,
-    "right": None,
     "rear": None,
 }
 
-# Estado de ángulos
 servo_angles = {
     "front": SERVO_CENTER,
     "rear": SERVO_CENTER,
@@ -269,6 +255,9 @@ def send_position(x, y):
     print("💃", cmd)
 
 def do_shake_for_touch(pin):
+    """
+    Conserva los movimientos de cadera iniciales antes de moverte.
+    """
     behavior = TOUCH_BEHAVIOR.get(pin)
     if not behavior:
         return
@@ -276,6 +265,68 @@ def do_shake_for_touch(pin):
         send_cmd(cmd)
         print("💃", cmd)
         time.sleep(0.12)
+
+# =============================
+# ULTRASONIC MANUAL (ESTABLE)
+# =============================
+def measure_distance(trigger_pin, echo_pin, timeout=0.03):
+    """
+    Retorna distancia en cm o None.
+    """
+    GPIO.output(trigger_pin, False)
+    time.sleep(0.0002)
+
+    GPIO.output(trigger_pin, True)
+    time.sleep(0.00001)
+    GPIO.output(trigger_pin, False)
+
+    start_wait = time.time()
+
+    # esperar subida
+    while GPIO.input(echo_pin) == 0:
+        pulse_start = time.time()
+        if pulse_start - start_wait > timeout:
+            return None
+
+    # esperar bajada
+    while GPIO.input(echo_pin) == 1:
+        pulse_end = time.time()
+        if pulse_end - pulse_start > timeout:
+            return None
+
+    pulse_duration = pulse_end - pulse_start
+    distance = (pulse_duration * 34300) / 2.0
+
+    if distance < 2 or distance > MAX_DISTANCE_CM:
+        return None
+
+    return round(distance, 1)
+
+def read_filtered(trigger_pin, echo_pin, samples=2):
+    """
+    Pocas muestras para mantener respuesta rápida.
+    Mover -> pausa -> leer -> pausa -> leer
+    y usar mediana.
+    """
+    vals = []
+
+    for _ in range(samples):
+        d = measure_distance(trigger_pin, echo_pin)
+        if d is not None:
+            vals.append(d)
+        time.sleep(READ_BETWEEN_SAMPLES)
+
+    if not vals:
+        return None
+
+    vals.sort()
+    return vals[len(vals) // 2]
+
+def get_sensor_cfg(name):
+    for cfg in ULTRASONICS:
+        if cfg["name"] == name:
+            return cfg
+    return None
 
 # =============================
 # CONVERSIÓN DE DISTANCIA A PESO
@@ -286,14 +337,10 @@ def distance_to_weight(d):
     if d is None or d <= 0:
         return None
 
-    # si está muy cerca, casi no aporta
     if d <= OBSTACLE_CM:
         return 0.05
 
-    # normaliza aprox 0..1 usando 120 cm como zona útil
     usable = clamp((d - OBSTACLE_CM) / 120.0, 0.0, 1.0)
-
-    # curva un poco más orgánica
     return 0.15 + (usable ** 1.2) * 0.85
 
 # =============================
@@ -306,17 +353,12 @@ def front_vector_from_angle(angle_deg):
     min=0      => diagonal X-,Y+
     max=90     => diagonal X+,Y+
     """
-    # -45..+45 grados relativos
     rel = angle_deg - SERVO_CENTER
     rad = math.radians(rel)
 
-    # base mirando a Y+, así:
-    # x = sin(rel)
-    # y = cos(rel)
     x = math.sin(rad)
     y = math.cos(rad)
 
-    # normalización ligera
     mag = math.sqrt(x*x + y*y) or 1.0
     return (x / mag, y / mag)
 
@@ -326,82 +368,112 @@ def rear_vector_from_angle(angle_deg):
     center=45 => Y-
     min=0      => diagonal X+,Y-
     max=90     => diagonal X-,Y-
-    (invertido respecto a front)
     """
     rel = angle_deg - SERVO_CENTER
     rad = math.radians(rel)
 
-    # invertimos frente/atrás y lateral
     x = -math.sin(rad)
     y = -math.cos(rad)
 
     mag = math.sqrt(x*x + y*y) or 1.0
     return (x / mag, y / mag)
 
-LEFT_VECTOR = (-1.0, 0.0)
-RIGHT_VECTOR = (1.0, 0.0)
+# =============================
+# SCANEO FRONT / REAR
+# mueve servo -> pausa -> lee -> pausa -> lee
+# =============================
+def scan_sensor(name, angle):
+    cfg = get_sensor_cfg(name)
+    if not cfg:
+        return None
+
+    if name == "front":
+        ch = FRONT_SERVO_CHANNEL
+    else:
+        ch = REAR_SERVO_CHANNEL
+
+    # mover servo
+    servo.set_angle(ch, angle)
+    servo_angles[name] = angle
+
+    # pausa mecánica
+    time.sleep(SERVO_SETTLE_TIME)
+
+    # leer 1
+    d1 = measure_distance(cfg["trigger"], cfg["echo"])
+
+    # pausa
+    time.sleep(POST_READ_PAUSE)
+
+    # leer 2
+    d2 = measure_distance(cfg["trigger"], cfg["echo"])
+
+    # combinar
+    vals = [v for v in [d1, d2] if v is not None]
+
+    if not vals:
+        dist = None
+    else:
+        vals.sort()
+        dist = vals[len(vals) // 2]
+
+    distances_state[name] = dist
+    return dist
 
 # =============================
 # LOOP DE ESCANEO DE SERVOS + ULTRASONICS
-# solo front y rear se mueven
-# left/right son fijos
+# SOLO FRONT Y REAR
 # =============================
 def ultrasonic_loop():
     global distances_state
-
-    # patrones distintos para que no se vean sincronizados mecánicos
-    front_pattern = [20, 35, 45, 60, 70, 55, 45, 30]
-    rear_pattern  = [65, 50, 45, 35, 20, 30, 45, 60]
 
     idx = 0
 
     while True:
         if not touch_active:
-            servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
-            servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
-            servo_angles["front"] = SERVO_CENTER
-            servo_angles["rear"] = SERVO_CENTER
-            time.sleep(0.08)
+            # reposo: ambos al centro
+            if servo_angles["front"] != SERVO_CENTER:
+                servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
+                servo_angles["front"] = SERVO_CENTER
+
+            if servo_angles["rear"] != SERVO_CENTER:
+                servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
+                servo_angles["rear"] = SERVO_CENTER
+
+            time.sleep(0.10)
             continue
 
-        # mover front
-        fa = front_pattern[idx % len(front_pattern)]
-        servo.set_angle(FRONT_SERVO_CHANNEL, fa)
-        servo_angles["front"] = fa
-        time.sleep(0.025)
+        # FRONT: mover -> pausa -> leer -> pausa -> leer
+        fa = FRONT_PATTERN[idx % len(FRONT_PATTERN)]
+        d_front = scan_sensor("front", fa)
 
-        # leer front
-        distances_state["front"] = ultrasonics["front"].get_distance()
+        # pequeña separación para evitar eco cruzado
+        time.sleep(SENSOR_INTERLEAVE_PAUSE)
 
-        # leer left fijo
-        distances_state["left"] = ultrasonics["left"].get_distance()
-
-        # mover rear
-        ra = rear_pattern[idx % len(rear_pattern)]
-        servo.set_angle(REAR_SERVO_CHANNEL, ra)
-        servo_angles["rear"] = ra
-        time.sleep(0.025)
-
-        # leer rear
-        distances_state["rear"] = ultrasonics["rear"].get_distance()
-
-        # leer right fijo
-        distances_state["right"] = ultrasonics["right"].get_distance()
+        # REAR: mover -> pausa -> leer -> pausa -> leer
+        ra = REAR_PATTERN[idx % len(REAR_PATTERN)]
+        d_rear = scan_sensor("rear", ra)
 
         idx += 1
+
+        print(
+            f"📡 scan front={d_front}@{servo_angles['front']}° | "
+            f"rear={d_rear}@{servo_angles['rear']}°"
+        )
+
         time.sleep(0.02)
 
 threading.Thread(target=ultrasonic_loop, daemon=True).start()
 
 # =============================
 # CÁLCULO DEL VECTOR DE ESPACIO LIBRE
+# SOLO FRONT + REAR
 # =============================
 def compute_space_vector(pin):
     """
-    Combina los 4 sensores en un vector XY continuo.
-    - left/right fijos
-    - front/rear según ángulo de sus servos
-    - si un sensor no tiene lectura, se descarta
+    Combina SOLO front y rear:
+    - front según ángulo actual del servo front
+    - rear según ángulo actual del servo rear
     """
     behavior = TOUCH_BEHAVIOR[pin]
 
@@ -427,26 +499,10 @@ def compute_space_vector(pin):
         total_y += vy * w_rear
         used += 1
 
-    # LEFT
-    d_left = distances_state["left"]
-    w_left = distance_to_weight(d_left)
-    if w_left is not None:
-        total_x += LEFT_VECTOR[0] * w_left
-        total_y += LEFT_VECTOR[1] * w_left
-        used += 1
-
-    # RIGHT
-    d_right = distances_state["right"]
-    w_right = distance_to_weight(d_right)
-    if w_right is not None:
-        total_x += RIGHT_VECTOR[0] * w_right
-        total_y += RIGHT_VECTOR[1] * w_right
-        used += 1
-
     if used == 0:
         return None, None, 0.0
 
-    # un poco de "exploración" según personalidad
+    # exploración orgánica por personalidad
     total_x += random.uniform(-0.15, 0.15) * behavior["explore"]
     total_y += random.uniform(-0.15, 0.15) * behavior["explore"]
 
@@ -455,27 +511,22 @@ def compute_space_vector(pin):
 
 # =============================
 # EVALÚA SI EL VECTOR ACTUAL ESTÁ BLOQUEADO
+# SOLO FRONT / REAR (por eje Y dominante)
 # =============================
 def is_vector_blocked(x, y):
     """
-    Revisa si el vector apunta principalmente hacia una zona con obstáculo.
+    Como left/right están descartados, evaluamos principalmente el eje Y.
+    Si el vector quiere ir hacia adelante, revisa front.
+    Si quiere ir hacia atrás, revisa rear.
     """
     if x is None or y is None:
         return True
 
-    # eje dominante
-    if abs(y) >= abs(x):
-        # domina Y
-        if y >= 0:
-            d = distances_state["front"]
-        else:
-            d = distances_state["rear"]
+    # domina adelante/atrás o no, pero igual resolvemos por el signo de Y
+    if y >= 0:
+        d = distances_state["front"]
     else:
-        # domina X
-        if x >= 0:
-            d = distances_state["right"]
-        else:
-            d = distances_state["left"]
+        d = distances_state["rear"]
 
     if d is None:
         return True
@@ -493,7 +544,7 @@ def vector_to_move(pin, vx, vy):
 
     mag = math.sqrt(vx * vx + vy * vy)
 
-    # si el vector es muy pequeño, movimiento exploratorio pequeño
+    # si el vector es muy pequeño, exploración pequeña
     if mag < 0.08:
         x = random.uniform(-base_speed * 0.6, base_speed * 0.6)
         y = random.uniform(-base_speed * 0.6, base_speed * 0.6)
@@ -504,9 +555,8 @@ def vector_to_move(pin, vx, vy):
     nx = vx / mag
     ny = vy / mag
 
-    # escala según fuerza del vector
+    # fuerza
     strength = clamp(mag, 0.2, 1.8)
-
     speed = base_speed * strength
 
     x = nx * speed
@@ -516,13 +566,10 @@ def vector_to_move(pin, vx, vy):
     x += random.uniform(-jitter, jitter)
     y += random.uniform(-jitter, jitter)
 
-    # limitar
     x = clamp(x, -MAX_AXIS, MAX_AXIS)
     y = clamp(y, -MAX_AXIS, MAX_AXIS)
 
-    # pasos variables por personalidad
     steps = clamp(behavior["steps"] + random.randint(-2, 2), 1, MAX_STEPS)
-
     return x, y, steps
 
 # =============================
@@ -536,9 +583,8 @@ last_move_vector = (None, None)
 try:
     while True:
         # OJO:
-        # con PUD_UP, normalmente "presionado" = LOW (False)
-        # si en tu sistema te funciona al revés, deja == True
-        # Como tu código original usaba True, lo dejo igual.
+        # con PUD_UP normalmente "presionado" = LOW (False)
+        # como tu código original usaba True, lo dejo igual
         active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
 
         # ---------- TOUCH ON ----------
@@ -554,13 +600,12 @@ try:
                 did_shake = False
                 last_move_vector = (None, None)
 
-            # baile inicial solo una vez por activación
+            # conserva movimientos de cadera iniciales ANTES de moverte
             if not did_shake:
                 do_shake_for_touch(pin)
                 did_shake = True
                 time.sleep(0.08)
 
-            # recalcular movimiento
             need_move = False
 
             if last_move_vector[0] is None:
@@ -576,8 +621,6 @@ try:
 
                 print(
                     f"📡 dist front={distances_state['front']}@{servo_angles['front']}° | "
-                    f"left={distances_state['left']} | "
-                    f"right={distances_state['right']} | "
                     f"rear={distances_state['rear']}@{servo_angles['rear']}°"
                 )
 
@@ -588,7 +631,7 @@ try:
                     y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
                     steps = clamp(behavior["steps"], 1, MAX_STEPS)
                     print("📡 Sin lecturas válidas -> exploración")
-                    send_move(x, y, steps)
+                    send_move(x, y)
                     last_move_vector = (x, y)
                 else:
                     x, y, steps = vector_to_move(pin, vx, vy)
@@ -624,13 +667,10 @@ finally:
 
     sock.close()
 
-    for u in ultrasonics.values():
-        u.close()
-
+    # regresar servos al centro
     servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
     servo.set_angle(REAR_SERVO_CHANNEL, SERVO_CENTER)
     time.sleep(0.1)
     servo.relax()
 
     GPIO.cleanup()
-    
