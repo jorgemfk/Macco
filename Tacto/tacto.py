@@ -554,9 +554,35 @@ def vector_to_move(pin, vx, vy):
 # tu hardware parece estar "activo = True"
 # por eso lo dejo así, igual que tu código original
 # =============================
+def is_touch_stable(pin, checks=4, delay=0.01):
+    """
+    HIGH estable = touch real
+    """
+    for _ in range(checks):
+        if GPIO.input(pin) != True:
+            return False
+        time.sleep(delay)
+    return True
+
+def is_release_stable(pin, checks=4, delay=0.01):
+    """
+    LOW estable = touch realmente liberado
+    """
+    for _ in range(checks):
+        if GPIO.input(pin) == True:
+            return False
+        time.sleep(delay)
+    return True
+
 def get_active_touch_pin():
-    active_pins = [p for p in TOUCH_PINS if GPIO.input(p) == True]
-    return active_pins[0] if active_pins else None
+    """
+    Devuelve el primer pin con touch real y estable.
+    """
+    for p in TOUCH_PINS:
+        if GPIO.input(p) == True:
+            if is_touch_stable(p, checks=4, delay=0.01):
+                return p
+    return None
 
 # =============================
 # SESIÓN DE EXPLORACIÓN POR TOUCH
@@ -659,9 +685,19 @@ try:
             print("🔒 Esperando liberación del touch para permitir nuevo disparo...")
 
         # ---------- LIBERACIÓN ----------
-        elif active_pin is None and touch_latched:
-            touch_latched = False
-            print("🔓 Touch liberado, listo para siguiente sesión")
+        elif touch_latched:
+            # no liberes por una sola lectura falsa
+            # espera a que TODOS los touch pins estén realmente en release estable
+            released = True
+
+            for p in TOUCH_PINS:
+                if not is_release_stable(p, checks=4, delay=0.01):
+                    released = False
+                    break
+
+            if released:
+                touch_latched = False
+                print("🔓 Touch liberado, listo para siguiente sesión")
 
         time.sleep(0.03)
 
