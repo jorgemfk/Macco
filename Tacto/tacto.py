@@ -283,7 +283,7 @@ def do_shake_for_touch(pin):
         return
     for cmd in behavior["shake"]:
         send_cmd(cmd)
-    time.sleep(0.32)
+        time.sleep(0.06)
 
 # =============================
 # ULTRASONIC MANUAL (ESTABLE)
