@@ -55,7 +55,7 @@ SENSOR_INTERLEAVE_PAUSE = 0.06
 # =============================
 # LÍMITES MOVIMIENTO ROBOT
 # =============================
-MAX_AXIS = 15
+MAX_AXIS = 25
 MAX_STEPS = 10
 
 # =============================
@@ -65,16 +65,30 @@ MAX_STEPS = 10
 TOUCH_BEHAVIOR = {
     21: {
         "name": "curioso",
-        "base_speed": 8,
+        "base_speed": 13,
         "steps": 6,
         "jitter": 2,
         "explore": 1.0,
         "session_min": 3.0,
         "session_max": 4.5,
-        "shake": [
-            "CMD_POSITION#4#-2#0",
-            "CMD_POSITION#3#1#0",
-            "CMD_POSITION#-2#2#0",
+        "shake": ['CMD_POSITION#8#3#0', 'CMD_POSITION#8#2#0', 
+        'CMD_POSITION#8#1#0', 'CMD_POSITION#8#0#0', 'CMD_POSITION#8#-1#0', 
+        'CMD_POSITION#8#-2#0', 'CMD_POSITION#8#-4#0', 'CMD_POSITION#7#-5#0', 
+        'CMD_POSITION#6#-6#0', 'CMD_POSITION#6#-7#0', 'CMD_POSITION#5#-8#0', 
+        'CMD_POSITION#4#-8#0', 'CMD_POSITION#3#-8#0', 'CMD_POSITION#2#-9#0', 
+        'CMD_POSITION#1#-9#0', 'CMD_POSITION#0#-9#0', 'CMD_POSITION#-2#-9#0', 
+        'CMD_POSITION#-3#-9#0', 'CMD_POSITION#-4#-9#0', 'CMD_POSITION#-6#-9#0',
+         'CMD_POSITION#-7#-9#0', 'CMD_POSITION#-8#-8#0', 'CMD_POSITION#-9#-8#0',
+          'CMD_POSITION#-9#-7#0', 'CMD_POSITION#-10#-6#0', 'CMD_POSITION#-10#-5#0',
+           'CMD_POSITION#-10#-4#0', 'CMD_POSITION#-11#-4#0', 'CMD_POSITION#-11#-3#0', 
+           'CMD_POSITION#-11#-2#0', 'CMD_POSITION#-11#-1#0', 'CMD_POSITION#-11#0#0', 
+           'CMD_POSITION#-10#0#0', 'CMD_POSITION#-9#1#0', 'CMD_POSITION#-8#1#0', 
+           'CMD_POSITION#-7#1#0', 'CMD_POSITION#-6#2#0', 'CMD_POSITION#-5#2#0', 
+           'CMD_POSITION#-5#1#0', 'CMD_POSITION#-4#1#0', 'CMD_POSITION#-4#0#0', 
+           'CMD_POSITION#-3#0#0', 'CMD_POSITION#-2#0#0', 'CMD_POSITION#-2#-1#0', 
+           'CMD_POSITION#-2#-2#0', 'CMD_POSITION#-2#-3#0', 'CMD_POSITION#-2#-4#0',
+            'CMD_POSITION#-2#-5#0', 'CMD_POSITION#-2#-6#0', 'CMD_POSITION#-3#-6#0',
+             'CMD_POSITION#-4#-6#0', 'CMD_POSITION#-5#-6#0', 'CMD_POSITION#-6#-6#0',
             "CMD_POSITION#0#0#0",
         ],
     },
@@ -512,39 +526,44 @@ def is_vector_blocked(x, y):
 # =============================
 # CONVIERTE VECTOR DE ESPACIO A CMD_MOVE
 # =============================
+def apply_minimum(val, min_val=13):
+    """Aplica valor mínimo preservando el signo, respeta el 0."""
+    if val == 0:
+        return 0
+    sign = 1 if val > 0 else -1
+    return sign * max(abs(val), min_val)
 def vector_to_move(pin, vx, vy):
     behavior = TOUCH_BEHAVIOR[pin]
-
     base_speed = behavior["base_speed"]
     jitter = behavior["jitter"]
-
     mag = math.sqrt(vx * vx + vy * vy)
+
+
 
     # si el vector es muy pequeño, exploración pequeña
     if mag < 0.08:
         x = random.uniform(-base_speed * 0.6, base_speed * 0.6)
         y = random.uniform(-base_speed * 0.6, base_speed * 0.6)
+        x = apply_minimum(x)
+        y = apply_minimum(y)
         steps = clamp(behavior["steps"] + random.randint(-1, 1), 1, MAX_STEPS)
         return x, y, steps
 
     # normalizar
     nx = vx / mag
     ny = vy / mag
-
     # fuerza
     strength = clamp(mag, 0.2, 1.8)
     speed = base_speed * strength
-
     x = nx * speed
     y = ny * speed
-
     # jitter orgánico
     x += random.uniform(-jitter, jitter)
     y += random.uniform(-jitter, jitter)
-
     x = clamp(x, -MAX_AXIS, MAX_AXIS)
     y = clamp(y, -MAX_AXIS, MAX_AXIS)
-
+    x = apply_minimum(x)
+    y = apply_minimum(y)
     steps = clamp(behavior["steps"] + random.randint(-2, 2), 1, MAX_STEPS)
     return x, y, steps
 
