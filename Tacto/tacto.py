@@ -281,10 +281,9 @@ def do_shake_for_touch(pin):
     behavior = TOUCH_BEHAVIOR.get(pin)
     if not behavior:
         return
-    for cmd in behavior["shake"]:
-        send_cmd(cmd)
-        print("💃", cmd)
-        time.sleep(0.12)
+    #for cmd in behavior["shake"]:
+    send_cmd(behavior["shake"])
+    time.sleep(0.12)
 
 # =============================
 # ULTRASONIC MANUAL (ESTABLE)
