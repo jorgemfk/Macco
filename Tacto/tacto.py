@@ -17,7 +17,7 @@ SERVER_IP = "127.0.0.1"
 CMD_PORT = 5002
 
 # Touch
-TOUCH_PINS = [21]  # puedes volver a agregar 25,20,12 si quieres
+TOUCH_PINS = [21,20]  # puedes volver a agregar 25,20,12 si quieres
 TACTO_SERVER = "http://192.168.0.82:5822/touch"
 
 # Ultrasonicos (SOLO FRONT Y REAR)
