@@ -24,6 +24,8 @@ TACTO_SERVER = "http://192.168.0.82:5822/touch"
 ULTRASONICS = [
     {"trigger": 27, "echo": 22, "name": "front"},  # servo canal 1
     {"trigger": 5,  "echo": 6,  "name": "rear"},   # servo canal 2
+    {"trigger": 13, "echo": 19, "name": "left"},
+    {"trigger": 26, "echo": 16, "name": "right"},
 ]
 
 MAX_DISTANCE_CM = 300.0
@@ -228,6 +230,8 @@ def notify_tacto_server(pin):
 distances_state = {
     "front": None,
     "rear": None,
+    "left": None,
+    "right": None,
 }
 
 servo_angles = {
@@ -349,6 +353,8 @@ def distance_to_weight(d):
 # =============================
 # VECTORES POR SENSOR
 # =============================
+LEFT_VECTOR = (-1.0, 0.0)
+RIGHT_VECTOR = (1.0, 0.0)
 def front_vector_from_angle(angle_deg):
     """
     Front:
@@ -431,7 +437,7 @@ def ultrasonic_loop():
 
     while True:
         if not touch_active:
-            # reposo: ambos al centro
+            # reposo
             if servo_angles["front"] != SERVO_CENTER:
                 servo.set_angle(FRONT_SERVO_CHANNEL, SERVO_CENTER)
                 servo_angles["front"] = SERVO_CENTER
@@ -443,22 +449,42 @@ def ultrasonic_loop():
             time.sleep(0.10)
             continue
 
-        # FRONT
+        # ---------- FRONT ----------
         fa = FRONT_PATTERN[idx % len(FRONT_PATTERN)]
         d_front = scan_sensor("front", fa)
 
-        # separación para evitar eco cruzado
         time.sleep(SENSOR_INTERLEAVE_PAUSE)
 
-        # REAR
+        # ---------- REAR ----------
         ra = REAR_PATTERN[idx % len(REAR_PATTERN)]
         d_rear = scan_sensor("rear", ra)
+
+        time.sleep(SENSOR_INTERLEAVE_PAUSE)
+
+        # ---------- LEFT (fijo) ----------
+        cfg_l = get_sensor_cfg("left")
+        if cfg_l:
+            d_left = measure_distance(cfg_l["trigger"], cfg_l["echo"])
+            distances_state["left"] = d_left
+        else:
+            d_left = None
+
+        time.sleep(SENSOR_INTERLEAVE_PAUSE)
+
+        # ---------- RIGHT (fijo) ----------
+        cfg_r = get_sensor_cfg("right")
+        if cfg_r:
+            d_right = measure_distance(cfg_r["trigger"], cfg_r["echo"])
+            distances_state["right"] = d_right
+        else:
+            d_right = None
 
         idx += 1
 
         print(
-            f"📡 scan front={d_front}@{servo_angles['front']}° | "
-            f"rear={d_rear}@{servo_angles['rear']}°"
+            f"📡 F:{d_front}@{servo_angles['front']}° | "
+            f"R:{d_rear}@{servo_angles['rear']}° | "
+            f"L:{d_left} | X:{d_right}"
         )
 
         time.sleep(0.02)
@@ -476,34 +502,49 @@ def compute_space_vector(pin):
     total_y = 0.0
     used = 0
 
-    # FRONT
-    d_front = distances_state["front"]
-    w_front = distance_to_weight(d_front)
-    if w_front is not None:
+    # ---------- FRONT ----------
+    d = distances_state["front"]
+    w = distance_to_weight(d)
+    if w is not None:
         vx, vy = front_vector_from_angle(servo_angles["front"])
-        total_x += vx * w_front
-        total_y += vy * w_front
+        total_x += vx * w
+        total_y += vy * w
         used += 1
 
-    # REAR
-    d_rear = distances_state["rear"]
-    w_rear = distance_to_weight(d_rear)
-    if w_rear is not None:
+    # ---------- REAR ----------
+    d = distances_state["rear"]
+    w = distance_to_weight(d)
+    if w is not None:
         vx, vy = rear_vector_from_angle(servo_angles["rear"])
-        total_x += vx * w_rear
-        total_y += vy * w_rear
+        total_x += vx * w
+        total_y += vy * w
+        used += 1
+
+    # ---------- LEFT ----------
+    d = distances_state["left"]
+    w = distance_to_weight(d)
+    if w is not None:
+        total_x += LEFT_VECTOR[0] * w
+        total_y += LEFT_VECTOR[1] * w
+        used += 1
+
+    # ---------- RIGHT ----------
+    d = distances_state["right"]
+    w = distance_to_weight(d)
+    if w is not None:
+        total_x += RIGHT_VECTOR[0] * w
+        total_y += RIGHT_VECTOR[1] * w
         used += 1
 
     if used == 0:
         return None, None, 0.0
 
-    # exploración orgánica por personalidad
+    # exploración
     total_x += random.uniform(-0.15, 0.15) * behavior["explore"]
     total_y += random.uniform(-0.15, 0.15) * behavior["explore"]
 
     mag = math.sqrt(total_x * total_x + total_y * total_y)
     return total_x, total_y, mag
-
 # =============================
 # EVALÚA SI EL VECTOR ACTUAL ESTÁ BLOQUEADO
 # SOLO FRONT / REAR (por signo de Y)
@@ -512,10 +553,18 @@ def is_vector_blocked(x, y):
     if x is None or y is None:
         return True
 
-    if y >= 0:
-        d = distances_state["front"]
+    if abs(y) >= abs(x):
+        # eje Y domina
+        if y >= 0:
+            d = distances_state["front"]
+        else:
+            d = distances_state["rear"]
     else:
-        d = distances_state["rear"]
+        # eje X domina
+        if x >= 0:
+            d = distances_state["right"]
+        else:
+            d = distances_state["left"]
 
     if d is None:
         return True
