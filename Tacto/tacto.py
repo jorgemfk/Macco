@@ -810,7 +810,7 @@ def run_touch_session(pin):
 # - luego espera liberación del touch antes de permitir otro
 # =============================
 touch_latched = False  # True = ya se disparó una sesión y aún no se ha soltado
-
+servo.set_angle(0, 0)
 try:
     while True:
         active_pin = get_active_touch_pin()
