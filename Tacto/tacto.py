@@ -276,7 +276,7 @@ def send_position(x, y):
     y = int(clamp(round(y), -15, 15))
     cmd = f"CMD_POSITION#{x}#{y}#0"
     send_cmd(cmd)
-    print("💃", cmd)
+    print("POS", cmd)
 
 def do_shake_for_touch(pin):
     """
@@ -609,41 +609,51 @@ def apply_minimum(val, min_val=13):
         return 0
     sign = 1 if val > 0 else -1
     return sign * max(abs(val), min_val)
+
 def vector_to_move(pin, vx, vy):
     behavior = TOUCH_BEHAVIOR[pin]
     base_speed = behavior["base_speed"]
     jitter = behavior["jitter"]
+
     mag = math.sqrt(vx * vx + vy * vy)
 
-
-
-    # si el vector es muy pequeño, exploración pequeña
-    if mag < 0.08:
-        x = random.uniform(-base_speed * 0.6, base_speed * 0.6)
-        y = random.uniform(-base_speed * 0.6, base_speed * 0.6)
-        x = apply_minimum(x)
-        y = apply_minimum(y)
-        steps = clamp(behavior["steps"] + random.randint(-1, 1), 1, MAX_STEPS)
-        return x, y, steps
-
     # normalizar
-    nx = vx / mag
-    ny = vy / mag
-    # fuerza
+    nx = vx / (mag or 1.0)
+    ny = vy / (mag or 1.0)
+
     strength = clamp(mag, 0.2, 1.8)
     speed = base_speed * strength
+
     x = nx * speed
     y = ny * speed
-    # jitter orgánico
-    x += random.uniform(-jitter, jitter)
-    y += random.uniform(-jitter, jitter)
+
+    # 🔥 CLAVE: detectar ejes activos reales
+    x_active = abs(vx) > 0.01
+    y_active = abs(vy) > 0.01
+
+    # aplicar jitter SOLO en ejes activos
+    if x_active:
+        x += random.uniform(-jitter, jitter)
+    else:
+        x = 0
+
+    if y_active:
+        y += random.uniform(-jitter, jitter)
+    else:
+        y = 0
+
     x = clamp(x, -MAX_AXIS, MAX_AXIS)
     y = clamp(y, -MAX_AXIS, MAX_AXIS)
-    x = apply_minimum(x)
-    y = apply_minimum(y)
-    steps = clamp(behavior["steps"] + random.randint(-2, 2), 1, MAX_STEPS)
-    return x, y, steps
 
+    # aplicar mínimo SOLO en ejes activos
+    if x_active:
+        x = apply_minimum(x)
+    if y_active:
+        y = apply_minimum(y)
+
+    steps = clamp(behavior["steps"] + random.randint(-2, 2), 1, MAX_STEPS)
+
+    return x, y, steps
 # =============================
 # LECTURA DE TOUCH
 # IMPORTANTE:
@@ -720,7 +730,7 @@ def run_touch_session(pin):
             f"X:{distances_state.get('right')}"
         )
 
-        print(f"🧭 DECISIÓN INICIAL → {label.upper()} | distancia={dist} cm")
+        print(f" DECISIÓN INICIAL → {label.upper()} | distancia={dist} cm")
 
         x, y, steps = vector_to_move(pin, vx, vy)
 
@@ -813,7 +823,7 @@ try:
             run_touch_session(active_pin)
 
             # después de la sesión, NO permitir otro touch hasta soltar el sensor
-            print("🔒 Esperando liberación del touch para permitir nuevo disparo...")
+            print(" Esperando liberación del touch para permitir nuevo disparo...")
 
         # ---------- LIBERACIÓN ----------
         elif touch_latched:
@@ -828,7 +838,7 @@ try:
 
             if released:
                 touch_latched = False
-                print("🔓 Touch liberado, listo para siguiente sesión")
+                print(" Touch liberado, listo para siguiente sesión")
 
         time.sleep(0.03)
 
