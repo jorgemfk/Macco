@@ -387,6 +387,35 @@ def rear_vector_from_angle(angle_deg):
     mag = math.sqrt(x*x + y*y) or 1.0
     return (x / mag, y / mag)
 
+
+def choose_best_direction():
+    """
+    Elige la dirección con mayor distancia medible.
+    Retorna: (vx, vy, label, dist)
+    """
+    candidates = []
+
+    if distances_state["front"] is not None:
+        candidates.append(("front", distances_state["front"], 0, 1))
+
+    if distances_state["rear"] is not None:
+        candidates.append(("rear", distances_state["rear"], 0, -1))
+
+    if distances_state.get("left") is not None:
+        candidates.append(("left", distances_state["left"], -1, 0))
+
+    if distances_state.get("right") is not None:
+        candidates.append(("right", distances_state["right"], 1, 0))
+
+    if not candidates:
+        return None, None, None, None
+
+    # elegir mayor distancia
+    best = max(candidates, key=lambda x: x[1])
+
+    label, dist, vx, vy = best
+    return vx, vy, label, dist
+
 # =============================
 # SCANEO FRONT / REAR
 # mueve servo -> pausa -> lee -> pausa -> lee
@@ -666,7 +695,7 @@ def run_touch_session(pin):
         behavior.get("session_max", 6.0)
     )
 
-    print(f"🖐 Touch ON {pin} ({behavior['name']}) | sesión {session_duration:.2f}s")
+    print(f" Touch ON {pin} ({behavior['name']}) | sesión {session_duration:.2f}s")
     notify_tacto_server(pin)
 
     # activar escaneo ultrasonic
@@ -675,6 +704,41 @@ def run_touch_session(pin):
     # cadera inicial antes de moverse
     do_shake_for_touch(pin)
     time.sleep(0.08)
+    # =============================
+    # DECISIÓN INICIAL (MAYOR DISTANCIA)
+    # =============================
+    vx, vy, label, dist = choose_best_direction()
+
+    last_move_vector = (None, None)
+    last_move_time = 0.0
+
+    if vx is not None:
+        print(
+            f" F:{distances_state.get('front')} | "
+            f"R:{distances_state.get('rear')} | "
+            f"L:{distances_state.get('left')} | "
+            f"X:{distances_state.get('right')}"
+        )
+
+        print(f"🧭 DECISIÓN INICIAL → {label.upper()} | distancia={dist} cm")
+
+        x, y, steps = vector_to_move(pin, vx, vy)
+
+        print(
+            f" PRIMER MOVIMIENTO → dir={label} "
+            f"vec=({vx},{vy}) -> move=({x:.1f},{y:.1f}) steps={steps}"
+        )
+
+        send_move(x, y)
+
+        last_move_vector = (x, y)
+        last_move_time = time.time()
+
+
+        time.sleep(0.15)
+
+    else:
+        print("⚠ Sin datos iniciales de distancia, entrando en modo exploración")
 
     session_start = time.time()
     last_move_time = 0.0
@@ -688,7 +752,7 @@ def run_touch_session(pin):
         if last_move_vector[0] is None:
             need_move = True
         elif is_vector_blocked(last_move_vector[0], last_move_vector[1]):
-            print("🚧 Dirección actual bloqueada, recalculando...")
+            print(" Dirección actual bloqueada, recalculando...")
             need_move = True
         elif time.time() - last_move_time >= RECHECK_INTERVAL:
             need_move = True
@@ -697,7 +761,7 @@ def run_touch_session(pin):
             vx, vy, mag = compute_space_vector(pin)
 
             print(
-                f"📡 dist front={distances_state['front']}@{servo_angles['front']}° | "
+                f" dist front={distances_state['front']}@{servo_angles['front']}° | "
                 f"rear={distances_state['rear']}@{servo_angles['rear']}°"
             )
 
@@ -706,13 +770,13 @@ def run_touch_session(pin):
                 x = random.uniform(-behavior["base_speed"], behavior["base_speed"])
                 y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
                 steps = clamp(behavior["steps"], 1, MAX_STEPS)
-                print("📡 Sin lecturas válidas -> exploración")
+                print(" Sin lecturas válidas -> exploración")
                 send_move(x, y)
                 last_move_vector = (x, y)
             else:
                 x, y, steps = vector_to_move(pin, vx, vy)
                 print(
-                    f"🧭 space_vector=({vx:.2f}, {vy:.2f}) "
+                    f" space_vector=({vx:.2f}, {vy:.2f}) "
                     f"mag={mag:.2f} -> move=({x:.1f}, {y:.1f}) steps={steps}"
                 )
                 send_move(x, y)
