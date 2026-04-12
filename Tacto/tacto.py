@@ -17,7 +17,7 @@ SERVER_IP = "127.0.0.1"
 CMD_PORT = 5002
 
 # Touch
-TOUCH_PINS = [21,20]  # puedes volver a agregar 25,20,12 si quieres
+TOUCH_PINS = [21,12]  # puedes volver a agregar 25,20,12 si quieres
 TACTO_SERVER = "http://192.168.0.82:5822/touch"
 
 # Ultrasonicos (SOLO FRONT Y REAR)
@@ -29,7 +29,7 @@ ULTRASONICS = [
 ]
 
 MAX_DISTANCE_CM = 300.0
-OBSTACLE_CM = 25.0
+OBSTACLE_CM = 30.0
 RECHECK_INTERVAL = 0.12    # evita saturar server / recalcular demasiado rápido
 
 # =============================
@@ -132,11 +132,25 @@ TOUCH_BEHAVIOR = {
         "explore": 1.8,
         "session_min": 4.0,
         "session_max": 6.0,
-        "shake": [
-            "CMD_POSITION#2#2#0",
-            "CMD_POSITION#-2#-2#0",
-            "CMD_POSITION#2#-1#0",
-            "CMD_POSITION#0#0#0",
+        "shake": ['CMD_POSITION#8#3#0', 'CMD_POSITION#8#2#0',                  
+           'CMD_POSITION#-2#-2#0', 'CMD_POSITION#-2#-3#0', 'CMD_POSITION#-2#-4#0',
+            'CMD_POSITION#-2#-5#0', 'CMD_POSITION#-2#-6#0', 'CMD_POSITION#-3#-6#0',
+             'CMD_POSITION#-4#-6#0', 'CMD_POSITION#-5#-6#0', 'CMD_POSITION#-6#-6#0',
+        'CMD_POSITION#8#1#0', 'CMD_POSITION#8#0#0', 'CMD_POSITION#8#-1#0', 
+        'CMD_POSITION#8#-2#0', 'CMD_POSITION#8#-4#0', 'CMD_POSITION#7#-5#0', 
+        'CMD_POSITION#6#-6#0', 'CMD_POSITION#6#-7#0', 'CMD_POSITION#5#-8#0', 
+        'CMD_POSITION#4#-8#0', 'CMD_POSITION#3#-8#0', 'CMD_POSITION#2#-9#0', 
+          'CMD_POSITION#-9#-7#0', 'CMD_POSITION#-10#-6#0', 'CMD_POSITION#-10#-5#0',
+           'CMD_POSITION#-10#-4#0', 'CMD_POSITION#-11#-4#0', 'CMD_POSITION#-11#-3#0', 
+           'CMD_POSITION#-11#-2#0', 'CMD_POSITION#-11#-1#0', 'CMD_POSITION#-11#0#0',            
+        'CMD_POSITION#1#-9#0', 'CMD_POSITION#0#-9#0', 'CMD_POSITION#-2#-9#0', 
+        'CMD_POSITION#-3#-9#0', 'CMD_POSITION#-4#-9#0', 'CMD_POSITION#-6#-9#0',
+         'CMD_POSITION#-7#-9#0', 'CMD_POSITION#-8#-8#0', 'CMD_POSITION#-9#-8#0',
+           'CMD_POSITION#-10#0#0', 'CMD_POSITION#-9#1#0', 'CMD_POSITION#-8#1#0', 
+           'CMD_POSITION#-7#1#0', 'CMD_POSITION#-6#2#0', 'CMD_POSITION#-5#2#0', 
+           'CMD_POSITION#-5#1#0', 'CMD_POSITION#-4#1#0', 'CMD_POSITION#-4#0#0', 
+           'CMD_POSITION#-3#0#0', 'CMD_POSITION#-2#0#0', 'CMD_POSITION#-2#-1#0', 
+            'CMD_POSITION#0#0#0',
         ],
     },
 }
@@ -149,7 +163,7 @@ GPIO.setwarnings(False)
 
 # Touch
 for pin in TOUCH_PINS:
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 # Ultrasonic GPIO
 for cfg in ULTRASONICS:
