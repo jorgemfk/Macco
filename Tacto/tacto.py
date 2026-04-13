@@ -611,12 +611,11 @@ def is_vector_blocked(x, y):
 # =============================
 # CONVIERTE VECTOR DE ESPACIO A CMD_MOVE
 # =============================
-def apply_minimum(val, min_val=13):
-    """Aplica valor mínimo preservando el signo, respeta el 0."""
+def apply_minimum(val):
+    """Si val es 0 lo respeta, si abs(val) < 25 aplica val*3, si >= 25 conserva."""
     if val == 0:
         return 0
-    sign = 1 if val > 0 else -1
-    return sign * max(abs(val), min_val)
+    return val * 3
 
 def vector_to_move(pin, vx, vy):
     behavior = TOUCH_BEHAVIOR[pin]
@@ -654,10 +653,11 @@ def vector_to_move(pin, vx, vy):
     y = clamp(y, -MAX_AXIS, MAX_AXIS)
 
     # aplicar mínimo SOLO en ejes activos
-    if x_active:
-        x = apply_minimum(x)
-    if y_active:
-        y = apply_minimum(y)
+    if abs(x) < 10 and abs(y) < 10:
+        if x_active:
+            x = apply_minimum(x)
+        if y_active:
+            y = apply_minimum(y)
 
     steps = clamp(behavior["steps"] + random.randint(-2, 2), 1, MAX_STEPS)
 
