@@ -109,7 +109,7 @@ TOUCH_BEHAVIOR = {
             "CMD_POSITION#0#0#0",
         ],
     },
-    20: {
+    12: {
         "name": "cauto",
         "base_speed": 6,
         "steps": 4,
@@ -117,14 +117,18 @@ TOUCH_BEHAVIOR = {
         "explore": 0.8,
         "session_min": 3.0,
         "session_max": 4.0,
-        "shake": [
-            "CMD_POSITION#0#3#0",
-            "CMD_POSITION#0#-2#0",
-            "CMD_POSITION#1#1#0",
-            "CMD_POSITION#0#0#0",
+        "shake": ['CMD_POSITION#8#3#0', 'CMD_POSITION#8#2#0',                  
+           'CMD_POSITION#-2#-2#0', 'CMD_POSITION#-2#-3#0', 'CMD_POSITION#-2#-4#0',
+            'CMD_POSITION#-2#-5#0', 'CMD_POSITION#-2#-6#0', 'CMD_POSITION#-3#-6#0',
+             'CMD_POSITION#-4#-6#0', 'CMD_POSITION#-5#-6#0', 'CMD_POSITION#-6#-6#0',
+           'CMD_POSITION#-10#0#0', 'CMD_POSITION#-9#1#0', 'CMD_POSITION#-8#1#0', 
+           'CMD_POSITION#-7#1#0', 'CMD_POSITION#-6#2#0', 'CMD_POSITION#-5#2#0', 
+           'CMD_POSITION#-5#1#0', 'CMD_POSITION#-4#1#0', 'CMD_POSITION#-4#0#0', 
+           'CMD_POSITION#-3#0#0', 'CMD_POSITION#-2#0#0', 'CMD_POSITION#-2#-1#0', 
+            'CMD_POSITION#0#0#0', ,'CMD_POSITION#0#0#0','CMD_POSITION#0#0#0',
         ],
     },
-    12: {
+    20: {
         "name": "erratico",
         "base_speed": 9,
         "steps": 10,
