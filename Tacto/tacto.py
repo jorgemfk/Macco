@@ -125,7 +125,7 @@ TOUCH_BEHAVIOR = {
            'CMD_POSITION#-7#1#0', 'CMD_POSITION#-6#2#0', 'CMD_POSITION#-5#2#0', 
            'CMD_POSITION#-5#1#0', 'CMD_POSITION#-4#1#0', 'CMD_POSITION#-4#0#0', 
            'CMD_POSITION#-3#0#0', 'CMD_POSITION#-2#0#0', 'CMD_POSITION#-2#-1#0', 
-            'CMD_POSITION#0#0#0', ,'CMD_POSITION#0#0#0','CMD_POSITION#0#0#0',
+            'CMD_POSITION#0#0#0', 'CMD_POSITION#0#0#0','CMD_POSITION#0#0#0',
         ],
     },
     20: {
@@ -144,7 +144,7 @@ TOUCH_BEHAVIOR = {
            'CMD_POSITION#-7#1#0', 'CMD_POSITION#-6#2#0', 'CMD_POSITION#-5#2#0', 
            'CMD_POSITION#-5#1#0', 'CMD_POSITION#-4#1#0', 'CMD_POSITION#-4#0#0', 
            'CMD_POSITION#-3#0#0', 'CMD_POSITION#-2#0#0', 'CMD_POSITION#-2#-1#0', 
-            'CMD_POSITION#0#0#0', ,'CMD_POSITION#0#0#0','CMD_POSITION#0#0#0',
+            'CMD_POSITION#0#0#0', 'CMD_POSITION#0#0#0','CMD_POSITION#0#0#0',
         ],
     },
 }
