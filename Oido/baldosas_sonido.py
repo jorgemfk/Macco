@@ -84,7 +84,7 @@ servos = Servos(i2c1)
 
 # ---------------- PARÁMETROS ORGÁNICOS ----------------
 
-threshold = 3          # filtro ruido
+threshold = 4          # filtro ruido
 alpha = 0.15           # suavizado movimiento
 memory_decay = 0.96    # memoria sonido
 explore_speed = 0.02   # exploración cuando no hay sonido
@@ -136,6 +136,9 @@ while True:
     memory_x += x
     memory_y += y
 
+    print(memory_x)
+    print(memory_y)
+
     # -------- determinar dirección --------
 
     if energy > 0:
@@ -171,7 +174,11 @@ while True:
     for i in range(6):
 
         servo_angles[i] = servo_angles[i]*(1-alpha) + servo_targets[i]*alpha
-
+        print("servo")
+        print(i)
+        print(servo_angles[i])
+        if servo_angles[i] >120:
+            servo_angles[i]=1
         servos.position(i, servo_angles[i])
 
     time.sleep_ms(40)
