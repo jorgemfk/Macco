@@ -3,6 +3,7 @@ import time
 import re
 import random
 from openai import OpenAI
+import anthropic
 import os
 import redis, json
 #import luma module
@@ -35,7 +36,7 @@ _face_anim_thread = None
 _face_anim_running = False
 
 # valores reales 
-VEL_HORARIO = -0.05
+VEL_HORARIO = -0.10
 VEL_ANTIHORARIO = 0.10
 VEL_STOP = 0
 
@@ -293,10 +294,10 @@ def unify_blocks(code: str) -> str:
     code = re.sub(r'(?m)//.*$', '', code)
 
     # 3) Si quedó alguna línea con solo ``` (p. ej. bloque abierto sin cerrar), quitarla
-    code = re.sub(r'(?m)^[ \t]*```.*$', '', code)
-    code = re.sub(r"```.*?```", "", code, flags=re.DOTALL)
-    code = re.sub(r'//.*$', '', code, flags=re.MULTILINE)
-    code = re.sub(r'(?m)^[ \t]*[()] *$', '', code)
+    #code = re.sub(r'(?m)^[ \t]*```.*$', '', code)
+    #code = re.sub(r"```.*?```", "", code, flags=re.DOTALL)
+    #code = re.sub(r'//.*$', '', code, flags=re.MULTILINE)
+    #code = re.sub(r'(?m)^[ \t]*[()] *$', '', code)
     code = code.replace("\n", " ")
     return code
 
@@ -692,6 +693,8 @@ def extract_code(text):
 
 # ---- 2. Configuracion ----
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+claude = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
+
 time.sleep(5)
 
 chat_history = [
@@ -755,7 +758,7 @@ Genera código SuperCollider (SC 3.10) con entre 5 y 7 SynthDef y patrones Pbind
 que juntos expresen {mood_instruction} con efecto estereo.
 
 Restricciones:
-- Solo puedes usar: SynthDef, SinOsc, Saw, Pulse, LFPulse, Env, EnvGen, Mix, Out, Pan2, LPF, HPF, FreeVerb, DelayN, CombN, Impulse, Dust, Pbind, Pseq, Prand, Pmono, Pdef, TempoClock.
+- Solo puedes usar estos UGens y clases, nada mas: SynthDef, SinOsc, Saw, Pulse, LFPulse, Env, EnvGen, Mix, Out, Pan2, LPF, HPF, FreeVerb, DelayN, CombN, Impulse, Dust, Pbind, Pseq, Prand, Pmono, Pdef, TempoClock.
 - No inventes funciones, clases ni metodos.
 - No uses  .delay().
 - No incluyas comentarios ni explicaciones.
@@ -773,13 +776,30 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
 
 
         # Llamada al modelo
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=chat_history,
-            temperature=0.7
-        )
+        try: 
+            #CLAUDE
+            response = claude.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=4096,
+                system= system_msg,
+                messages=[
+                {"role": "user", "content": user_msg}
+                    ]
+                )
 
-        sc_code = response.choices[0].message.content.strip()
+            sc_code = response.content[0].text.strip()
+        except Exception as e:
+            print(f"Error inesperado: {type(e).__name__}: {e}")
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=chat_history,
+                temperature=0.7
+                )
+
+            sc_code = response.choices[0].message.content.strip()
+            #chat_history.append({"role": "assistant", "content": sc_code})
+        print("==== Bloque original ====")
+        print(sc_code)
         #chat_history.append({"role": "assistant", "content": sc_code})
 
         # Extraer bloque SC
@@ -788,8 +808,6 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
             sc_code = match.group(1).strip()
 
 
-        print("==== Bloque original ====")
-        print(sc_code)
         # Insertar dentro de s.waitForBoot solo si es la primera vez
         sc_code = unify_blocks(sc_code)
         if parens_balanced(sc_code):
@@ -807,4 +825,4 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
         else:
             print("?? Bloque descartado: parentesis no balanceados")
             print(sc_code)
-            chat_history = chat_history[:-2]
+            #chat_history = chat_history[:-2]
