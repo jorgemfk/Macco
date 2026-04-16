@@ -20,10 +20,69 @@ from IT8951.display import AutoEPDDisplay
 from IT8951 import constants
 from PIL import ImageDraw, ImageFont
 import textwrap
+from adafruit_servokit import ServoKit
+#servokit
+# PCA9685
+kit = ServoKit(channels=16)
+
+# velocidad mínima funcional 
+VEL_MIN = 0.1
+
+_servo_thread = None
+_servo_running = False
 
 _face_anim_thread = None
 _face_anim_running = False
 
+# valores reales 
+VEL_HORARIO = -0.05
+VEL_ANTIHORARIO = 0.10
+VEL_STOP = 0
+
+
+def servo_360_loop(canal=0):
+    global _servo_running
+
+    for _ in range(3):  # <<< 3 ciclos exactos
+        if not _servo_running:
+            break
+
+        # horario
+        kit.continuous_servo[canal].throttle = VEL_HORARIO
+        time.sleep(5)
+
+        # pausa
+        kit.continuous_servo[canal].throttle = VEL_STOP
+        time.sleep(1)
+
+        # antihorario
+        kit.continuous_servo[canal].throttle = VEL_ANTIHORARIO
+        time.sleep(5)
+
+        # pausa
+        kit.continuous_servo[canal].throttle = VEL_STOP
+        time.sleep(1)
+
+    # asegurar que se detiene al final
+    kit.continuous_servo[canal].throttle = VEL_STOP
+    _servo_running = False
+
+def start_servo():
+    global _servo_thread, _servo_running
+
+    if _servo_running:
+        return  # ya está corriendo
+
+    _servo_running = True
+    _servo_thread = threading.Thread(target=servo_360_loop, daemon=True)
+    _servo_thread.start()
+
+
+def stop_servo():
+    global _servo_running
+    _servo_running = False
+    kit.continuous_servo[0].throttle = 0
+#itkovyres
 
 #os.environ["QT_QPA_PLATFORM"] = "offscreen"
 # Comando base con sus posibles argumentos
@@ -743,6 +802,8 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
             # Enviar bloque a SC
             sc_proc.stdin.write(sc_code + "\n")
             sc_proc.stdin.flush()
+            # >>>  LA SERVO
+            start_servo()
         else:
             print("?? Bloque descartado: parentesis no balanceados")
             print(sc_code)

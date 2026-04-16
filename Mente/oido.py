@@ -69,6 +69,8 @@ def analyze_with_openai(texto, wav_path):
 @app.route("/upload", methods=["POST"])
 def upload():
     """Recibe audio WAV, lo transcribe, interpreta y publica en Redis."""
+    print("Content-Length header:", request.content_length)
+    print("Bytes recibidos:", len(request.data))
     wav_path = tempfile.mktemp(suffix=".wav")
     with open(wav_path, "wb") as f:
         f.write(request.data)
