@@ -89,9 +89,9 @@ def upload():
     print("Transcripción:", texto)
 
     if not texto or len(texto) < 3:
-    print("Audio sin contenido legible, ignorando.")
-    os.remove(wav_path)
-    return "...", 204  # respuesta vacía, MaixPy no muestra nada
+        print("Audio sin contenido legible, ignorando.")
+        os.remove(wav_path)
+        return "...", 204  # respuesta vacía, MaixPy no muestra nada
 
     # --- Análisis emocional tipo DJ + referencia al WAV ---
     analisis = analyze_with_openai(texto, wav_path)
