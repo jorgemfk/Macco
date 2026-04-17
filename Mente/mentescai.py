@@ -22,10 +22,13 @@ from IT8951 import constants
 from PIL import ImageDraw, ImageFont
 import textwrap
 from adafruit_servokit import ServoKit
+
 #servokit
 # PCA9685
 kit = ServoKit(channels=16)
-
+for i in range(16):
+    kit.continuous_servo[i].set_pulse_width_range(500, 2500)
+time.sleep(1)
 # velocidad mínima funcional 
 VEL_MIN = 0.1
 
