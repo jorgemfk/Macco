@@ -35,7 +35,7 @@ def analyze_with_openai(texto, wav_path):
     "[Enojo, Asco, Miedo, Felicidad, Tristeza, Sorpresa, Neutral]\n"
     "- frase debe reaccionar emocionalmente al texto transcrito, "
     "como si el robot respondiera corporalmente a esa voz\n"
-    "- frase debe ser poetica, humana o ludica, retadora\n"
+    "- frase debe ser poetica, humana o ludica, retadora, positva o negativa, el robot se puede enojar si lo insultan\n"
     "- frase debe incluir la traduccion al ingles entre parentesis\n"
     "- descripcion_sonora debe describir como esa emocion se transforma "
     "en una sinfonia generativa en SuperCollider\n"
@@ -79,7 +79,7 @@ def upload():
     # --- Transcripción con Whisper ---
     with open(wav_path, "rb") as audio_file:
         transcript = openai.audio.transcriptions.create(
-            model="gpt-4o-transcribe",
+            model="whisper-1",
             file=audio_file,
             response_format="text"
         )
@@ -87,6 +87,11 @@ def upload():
     texto = transcript.strip()
     texto = sanitize_text(texto)
     print("Transcripción:", texto)
+
+    if not texto or len(texto) < 3:
+    print("Audio sin contenido legible, ignorando.")
+    os.remove(wav_path)
+    return "...", 204  # respuesta vacía, MaixPy no muestra nada
 
     # --- Análisis emocional tipo DJ + referencia al WAV ---
     analisis = analyze_with_openai(texto, wav_path)
