@@ -79,7 +79,7 @@ def upload():
     # --- Transcripción con Whisper ---
     with open(wav_path, "rb") as audio_file:
         transcript = openai.audio.transcriptions.create(
-            model="whisper-1",
+            model="gpt-4o-transcribe",
             file=audio_file,
             response_format="text"
         )
