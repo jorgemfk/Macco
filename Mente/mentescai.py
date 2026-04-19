@@ -104,7 +104,7 @@ def save_json_log(data):
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
 EVENT_WINDOW = 180  # segundos
-MAX_EVENTS_PER_WINDOW = 30
+MAX_EVENTS_PER_WINDOW = 5
 
 event_times = deque()
 ultimo_procesado = None
