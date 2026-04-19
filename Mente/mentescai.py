@@ -22,6 +22,9 @@ from IT8951 import constants
 from PIL import ImageDraw, ImageFont
 import textwrap
 from adafruit_servokit import ServoKit
+from datetime import datetime
+import os
+from collections import deque
 
 #servokit
 # PCA9685
@@ -87,6 +90,60 @@ def stop_servo():
     _servo_running = False
     kit.continuous_servo[0].throttle = 0
 #itkovyres
+
+#filtro redis
+
+LOG_DIR = "/home/jorge/logMacco"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+def save_json_log(data):
+    fecha = datetime.now().strftime("%Y-%m-%d")
+    filepath = os.path.join(LOG_DIR, f"{fecha}.log")
+
+    with open(filepath, "a") as f:
+        f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+EVENT_WINDOW = 180  # segundos
+MAX_EVENTS_PER_WINDOW = 30
+
+event_times = deque()
+ultimo_procesado = None
+ultimo_sentido = None
+
+def should_process(data):
+    global ultimo_procesado, ultimo_sentido
+
+    now = time.time()
+
+    # limpiar eventos viejos
+    while event_times and now - event_times[0] > EVENT_WINDOW:
+        event_times.popleft()
+
+    event_times.append(now)
+
+    # si hay demasiados eventos → filtrar
+    if len(event_times) > MAX_EVENTS_PER_WINDOW:
+        sentido = data.get("sentido")
+
+        # prioridad: primero que llega
+        if ultimo_procesado is None:
+            ultimo_procesado = now
+            ultimo_sentido = sentido
+            return True
+
+        # si es mismo tipo → DESCARTAR
+        if sentido == ultimo_sentido:
+            return False
+
+        # si es diferente tipo → aceptar y actualizar
+        ultimo_procesado = now
+        ultimo_sentido = sentido
+        return True
+
+    # si no hay saturación → aceptar
+    ultimo_procesado = now
+    ultimo_sentido = data.get("sentido")
+    return True
 
 #os.environ["QT_QPA_PLATFORM"] = "offscreen"
 # Comando base con sus posibles argumentos
@@ -713,6 +770,14 @@ display = AutoEPDDisplay(vcom=-2.15, rotate='flip', mirror=None, spi_hz=24000000
 for message in pubsub.listen():
     if message["type"] == "message":
         data = json.loads(message["data"])
+
+        # guardar SIEMPRE
+        save_json_log(data)
+
+        # aplicar filtro
+        if not should_process(data):
+            print(" Evento descartado por saturación")
+            continue
         print("\n Nuevo evento recibido:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 #while True:
