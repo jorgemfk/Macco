@@ -56,7 +56,7 @@ def servo_360_loop(canal=0):
 
         # horario
         kit.continuous_servo[canal].throttle = VEL_HORARIO
-        time.sleep(5)
+        time.sleep(2.5)
 
         # pausa
         kit.continuous_servo[canal].throttle = VEL_STOP
@@ -765,7 +765,7 @@ def extract_code(text):
 # ---- 2. Configuracion AI----
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 claude = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
-USE_CLAUDE = False
+USE_CLAUDE = True
 
 time.sleep(5)
 
