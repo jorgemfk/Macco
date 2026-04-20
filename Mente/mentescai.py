@@ -102,16 +102,19 @@ def save_json_log(data):
 
     with open(filepath, "a") as f:
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
+#CONFIGURACION DE EVENTOS SC
 
-EVENT_WINDOW = 180  # segundos
+EVENT_WINDOW = 300  # segundos
 MAX_EVENTS_PER_WINDOW = 5
+MIN_INTERVAL = EVENT_WINDOW / MAX_EVENTS_PER_WINDOW  
+last_accepted_time = 0
 
 event_times = deque()
 ultimo_procesado = None
 ultimo_sentido = None
 
 def should_process(data):
-    global ultimo_procesado, ultimo_sentido
+    global ultimo_procesado, ultimo_sentido, last_accepted_time
 
     now = time.time()
 
@@ -119,9 +122,14 @@ def should_process(data):
     while event_times and now - event_times[0] > EVENT_WINDOW:
         event_times.popleft()
 
+    # ---- NUEVO: control de separacion ----
+    if now - last_accepted_time < MIN_INTERVAL:
+        return False
+    
+    #evento candidato
     event_times.append(now)
 
-    # si hay demasiados eventos → filtrar
+    # si hay demasiados eventos filtrar
     if len(event_times) > MAX_EVENTS_PER_WINDOW:
         sentido = data.get("sentido")
 
@@ -129,20 +137,23 @@ def should_process(data):
         if ultimo_procesado is None:
             ultimo_procesado = now
             ultimo_sentido = sentido
+            last_accepted_time = now
             return True
 
-        # si es mismo tipo → DESCARTAR
+        # si es mismo tipo  DESCARTAR
         if sentido == ultimo_sentido:
             return False
 
-        # si es diferente tipo → aceptar y actualizar
+        # si es diferente tipo  aceptar y actualizar
         ultimo_procesado = now
         ultimo_sentido = sentido
+        last_accepted_time = now
         return True
 
-    # si no hay saturación → aceptar
+    # si no hay saturación  aceptar
     ultimo_procesado = now
     ultimo_sentido = data.get("sentido")
+    last_accepted_time = now
     return True
 
 #os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -313,7 +324,7 @@ def remove_unbalanced_parens(code: str) -> str:
                 stack.pop()
                 result.append(ch)
             else:
-                # huérfano → lo ignoramos
+                # huérfano ignoramos
                 continue
         else:
             result.append(ch)
@@ -751,9 +762,10 @@ def extract_code(text):
         return match.group(1).strip()
     return text.strip()
 
-# ---- 2. Configuracion ----
+# ---- 2. Configuracion AI----
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 claude = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
+USE_CLAUDE = False
 
 time.sleep(5)
 
@@ -846,16 +858,24 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
         # Llamada al modelo
         try: 
             #CLAUDE
-            response = claude.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                system= system_msg,
-                messages=[
-                {"role": "user", "content": user_msg}
-                    ]
-                )
+            if USE_CLAUDE:
+                response = claude.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=4096,
+                    system= system_msg,
+                    messages=[
+                    {"role": "user", "content": user_msg}
+                        ]
+                    )
 
-            sc_code = response.content[0].text.strip()
+                sc_code = response.content[0].text.strip()
+            else:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=chat_history,
+                    temperature=0.7
+                )
+                sc_code = response.choices[0].message.content.strip()
         except Exception as e:
             print(f"Error inesperado: {type(e).__name__}: {e}")
             response = client.chat.completions.create(
