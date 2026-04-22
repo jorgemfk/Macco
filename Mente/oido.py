@@ -1,28 +1,28 @@
 from flask import Flask, request
-import openai, tempfile, os, redis, json, unicodedata, datetime
+from openai import OpenAI
+import tempfile, os, redis, json, unicodedata, datetime
 
+# ==== CONFIG ====
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024
 
-# Configura Redis
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Redis
 r = redis.Redis(host='localhost', port=6379, db=0)
 
-# Configura OpenAI (usa tu API key en variable de entorno)
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-
+# ==== UTILS ====
 def sanitize_text(text: str) -> str:
-    """Quita acentos, tildes y caracteres no ASCII."""
     nfkd_form = unicodedata.normalize('NFKD', text)
     text = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
     text = text.replace("ñ", "n").replace("Ñ", "N")
     return text
 
 
+# ==== OPENAI ANALYSIS ====
 def analyze_with_openai(texto, wav_path):
-    """Analiza el texto transcrito y genera respuesta emocional tipo DJ."""
     prompt = (
-    "Un robot escucha una voz humana y percibe su carga emocional.\n\n"
+        "Un robot escucha una voz humana y percibe su carga emocional.\n\n"
     f"Texto transcrito de la voz:\n\"{texto}\"\n\n"
     f"El archivo de sonido original se encuentra en: {wav_path}\n\n"
     "Responde con EXACTAMENTE TRES enunciados en UNA sola linea, "
@@ -54,10 +54,9 @@ def analyze_with_openai(texto, wav_path):
     "como fuente principal para drones y ecos respiratorios. "
     "emocion:Tristeza\n"
     "Ahora genera tu respuesta."
-
     )
 
-    response = openai.chat.completions.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.9
@@ -66,52 +65,76 @@ def analyze_with_openai(texto, wav_path):
     return response.choices[0].message.content.strip()
 
 
+# ==== ENDPOINT ====
 @app.route("/upload", methods=["POST"])
 def upload():
-    """Recibe audio WAV, lo transcribe, interpreta y publica en Redis."""
-    print("Content-Length header:", request.content_length)
     print("Bytes recibidos:", len(request.data))
+
+    # ==== Guardar WAV ====
     wav_path = tempfile.mktemp(suffix=".wav")
     with open(wav_path, "wb") as f:
         f.write(request.data)
-    print(f"Archivo recibido ({len(request.data)} bytes):", wav_path)
 
-    # --- Transcripción con Whisper ---
-    with open(wav_path, "rb") as audio_file:
-        transcript = openai.audio.transcriptions.create(
-            model="gpt-4o-transcribe",
-            file=audio_file,
-            response_format="text"
-        )
+    print("Archivo guardado:", wav_path)
 
-    texto = transcript.strip()
-    texto = sanitize_text(texto)
-    print("Transcripción:", texto)
+    # ==== Validar WAV ====
+    if not request.data.startswith(b"RIFF"):
+        print("⚠️ Archivo no parece WAV válido")
 
-    if not texto or len(texto) < 3:
-        print("Audio sin contenido legible, ignorando.")
+    # ==== TRANSCRIPCIÓN ====
+    try:
+        with open(wav_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="gpt-4o-transcribe",
+                file=audio_file
+            )
+
+        texto = transcript.text.strip()
+        texto = sanitize_text(texto)
+
+    except Exception as e:
+        print("Error transcripcion:", e)
         os.remove(wav_path)
-        return "...", 204  # respuesta vacía, MaixPy no muestra nada
+        return "error_transcripcion", 500
 
-    # --- Análisis emocional tipo DJ + referencia al WAV ---
-    analisis = analyze_with_openai(texto, wav_path)
-    analisis = sanitize_text(analisis)
-    print("Interpretacion emocional:", analisis)
+    print("Texto:", texto)
 
-    # --- Publicar en Redis ---
+    # ==== FILTRO ====
+    if not texto or len(texto) < 3:
+        print("Audio vacio")
+        os.remove(wav_path)
+        return "...", 204
+
+    # ==== ANALISIS EMOCIONAL ====
+    try:
+        analisis = analyze_with_openai(texto, wav_path)
+        analisis = sanitize_text(analisis)
+    except Exception as e:
+        print("Error analisis:", e)
+        os.remove(wav_path)
+        return "error_analisis", 500
+
+    print("Analisis:", analisis)
+
+    # ==== REDIS ====
     data = {
         "sentido": "oido",
         "fecha": datetime.datetime.now().isoformat(),
-        "wav_path": wav_path,  #  Nueva clave con la ruta del audio
+        "wav_path": wav_path,
         "texto_original": texto,
-        "respuesta_openai": analisis 
+        "respuesta_openai": analisis
     }
 
-    r.publish("emociones", json.dumps(data, ensure_ascii=False))
-    print("Publicado en Redis desde OIDO:", data)
+    try:
+        r.publish("emociones", json.dumps(data, ensure_ascii=False))
+    except Exception as e:
+        print("Error Redis:", e)
+
+    print("Publicado en Redis")
 
     return texto
 
 
+# ==== RUN ====
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5821)
