@@ -82,9 +82,13 @@ i2c1 = I2C(I2C.I2C0, mode=I2C.MODE_MASTER, scl=7, sda=6)
 
 servos = Servos(i2c1)
 
+# bloqueo se servor para resetear a 0
+servo_blocked = [False]*6
+servo_release_time = [0]*6
+RETORNO_MS = 600  # tiempo para llegar a 0
 # ---------------- PARÁMETROS ORGÁNICOS ----------------
 
-threshold = 4          # filtro ruido
+threshold = 3          # filtro ruido
 alpha = 0.15           # suavizado movimiento
 memory_decay = 0.96    # memoria sonido
 explore_speed = 0.02   # exploración cuando no hay sonido
@@ -96,10 +100,19 @@ memory_x = 0
 memory_y = 0
 
 explore_angle = 0
-
+last_reset = time.ticks_ms()
 # ---------------- LOOP ----------------
 
 while True:
+    if time.ticks_diff(time.ticks_ms(), last_reset) > 600000:  # 10 min
+        print("soft reset PCA9685")
+        servos.pca9685.reset()
+        servos.pca9685.freq(50)
+        # reset mic
+        mic.deinit()
+        time.sleep_ms(100)
+        mic.init()
+        last_reset = time.ticks_ms()
 
     imga = mic.get_map()
     sound = mic.get_dir(imga)
@@ -140,7 +153,7 @@ while True:
     print(memory_y)
 
     # -------- determinar dirección --------
-
+    print("energy:", energy)
     if energy > 0:
 
         angle = math.atan2(memory_y, memory_x)
@@ -170,15 +183,34 @@ while True:
         servo_targets[i] = 10 + 110 * intensity
 
     # -------- movimiento orgánico --------
+    now = time.ticks_ms()
 
     for i in range(6):
 
+        # Si esta bloqueado, no aceptar nuevas órdenes
+        #if servo_blocked[i]:
+
+            # mantener en 0
+            #servos.position(i, 0)
+
+            # liberar después del tiempo
+            #if time.ticks_diff(now, servo_release_time[i]) > 0:
+                #servo_blocked[i] = False
+
+            #continue
+
+        # movimiento normal
         servo_angles[i] = servo_angles[i]*(1-alpha) + servo_targets[i]*alpha
-        print("servo")
-        print(i)
-        print(servo_angles[i])
-        if servo_angles[i] >120:
-            servo_angles[i]=1
+        #print("servo")
+        #print(i)
+        #print(servo_angles[i])
+        # condición de disparo
+        if servo_angles[i] > 109:
+            servo_angles[i] = 1
+
+            #servo_blocked[i] = True
+            #servo_release_time[i] = time.ticks_add(now, RETORNO_MS)
+
         servos.position(i, servo_angles[i])
 
-    time.sleep_ms(40)
+    time.sleep_ms(80)

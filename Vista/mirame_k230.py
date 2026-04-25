@@ -24,6 +24,49 @@ import ustruct
 
 #SERVO CONFIG
 
+# ==========================================================
+# I2C SAFE LAYER (ANTI BLOQUEOS WiFi + I2C)
+# ==========================================================
+
+I2C_FAIL_COUNT = 0
+I2C_FAIL_LIMIT = 5
+
+def i2c_recover():
+    global i2c1, s, I2C_FAIL_COUNT
+    try:
+        print(" Recuperando bus I2C...")
+        i2c1 = I2C(2, scl=11, sda=12, freq=100000, timeout=1000)
+        s.pca9685 = PCA9685(i2c1)
+        s.pca9685.freq(50)
+        I2C_FAIL_COUNT = 0
+        print(" I2C recuperado")
+    except Exception as e:
+        print(" Error recuperando I2C:", e)
+
+
+def safe_i2c_write(func, *args):
+    global I2C_FAIL_COUNT
+    try:
+        return func(*args)
+    except Exception as e:
+        I2C_FAIL_COUNT += 1
+        print("⚠ I2C WRITE ERROR:", e)
+
+        if I2C_FAIL_COUNT >= I2C_FAIL_LIMIT:
+            i2c_recover()
+
+
+def safe_i2c_read(func, *args):
+    global I2C_FAIL_COUNT
+    try:
+        return func(*args)
+    except Exception as e:
+        I2C_FAIL_COUNT += 1
+        print(" I2C READ ERROR:", e)
+
+        if I2C_FAIL_COUNT >= I2C_FAIL_LIMIT:
+            i2c_recover()
+        return 0
 
 
 class PCA9685:
@@ -36,10 +79,10 @@ class PCA9685:
         print(address)
         print(value)
         print("======")
-        self.i2c.writeto_mem(self.address, address, bytearray([value]))
+        safe_i2c_write(self.i2c.writeto_mem, self.address, address, bytearray([value]))
 
     def _read(self, address):
-        return self.i2c.readfrom_mem(self.address, address, 1)[0]
+        return safe_i2c_read(self.i2c.readfrom_mem, self.address, address, 1)[0]
 
     def reset(self):
         self._write(0x00, 0x00) # Mode1
@@ -57,10 +100,11 @@ class PCA9685:
 
     def pwm(self, index, on=None, off=None):
         if on is None or off is None:
-            data = self.i2c.readfrom_mem(self.address, 0x06 + 4 * index, 4)
+            data = safe_i2c_read(self.i2c.readfrom_mem, self.address, 0x06 + 4 * index, 4)
             return ustruct.unpack('<HH', data)
         data = ustruct.pack('<HH', on, off)
-        self.i2c.writeto_mem(self.address, 0x06 + 4 * index,  data)
+        safe_i2c_write(self.i2c.writeto_mem, self.address, 0x06 + 4 * index, data)
+
 
     def duty(self, index, value=None, invert=False):
         if value is None:
@@ -113,7 +157,7 @@ class Servos:
         else:
             return self.pca9685.duty(index)
         duty = min(self.max_duty, max(self.min_duty, int(duty)))
-        self.pca9685.duty(index, duty)
+        safe_i2c_write(self.pca9685.duty, index, duty)
 
     def release(self, index):
         self.pca9685.duty(index, 0)
@@ -123,6 +167,7 @@ i2c1 = I2C(2, scl = 11, sda = 12, freq = 100000, timeout = 1000)
 print(i2c1.scan())
 
 s=Servos(i2c1)
+
 
 # ===============================
 # SERVO 5 - ESTADO
@@ -172,6 +217,14 @@ pendientes = []
 ultimo_envio = 0
 WIFI_OK = False
 
+ultimo_resumen_enviado = None
+
+# =========================
+# LIMITADOR DE TASA
+# =========================
+envios_timestamps = []   # guarda timestamps de envíos
+MAX_ENVIOS_POR_MIN = 3
+VENTANA_MS = 60000
 
 def enviar_emociones_hilo(resumen):
     _thread.start_new_thread(enviar_emociones, (resumen,))
@@ -184,13 +237,57 @@ def procesar_envios_pendientes():
     if not WIFI_OK:
         print(" WiFi no conectado")
         return
+
     global pendientes, ultimo_envio
-    if len(pendientes) > 0:
-        ahora = time.ticks_ms()
-        if time.ticks_diff(ahora, ultimo_envio) > 2000:  # cada 2 s
-            resumen = pendientes.pop(0)
-            enviar_emociones_hilo(resumen)
-            ultimo_envio = ahora
+    global ultimo_resumen_enviado
+    global envios_timestamps
+
+    if not pendientes:
+        return
+
+    ahora = time.ticks_ms()
+
+    # =========================
+    # 🧹 LIMPIAR VENTANA (1 min)
+    # =========================
+    envios_timestamps = [
+        t for t in envios_timestamps
+        if time.ticks_diff(ahora, t) < VENTANA_MS
+    ]
+
+    # =========================
+    # 🚫 LIMITE DE 3 POR MINUTO
+    # =========================
+    if len(envios_timestamps) >= MAX_ENVIOS_POR_MIN:
+        print(" Límite alcanzado limpiando cola")
+        pendientes = []  #  BORRA TODO lo acumulado
+        return
+
+    # =========================
+    # ⏱ CONTROL DE INTERVALO (2s)
+    # =========================
+    if time.ticks_diff(ahora, ultimo_envio) <= 2000:
+        return
+
+    resumen = pendientes.pop(0)
+
+    # =========================
+    # 🚫 FILTRO DUPLICADOS
+    # =========================
+    if resumen == ultimo_resumen_enviado:
+        print("⏭️ Duplicado descartado:", resumen)
+        return
+
+    # =========================
+    # 🚀 ENVÍO
+    # =========================
+    enviar_emociones_hilo(resumen)
+
+    ultimo_envio = ahora
+    ultimo_resumen_enviado = resumen
+    envios_timestamps.append(ahora)
+
+    print("Enviado:", resumen)
 
 def enviar_emociones(resumen):
     if not WIFI_OK:
@@ -242,9 +339,9 @@ def WIFI_Connect(pl):
 
         for i in range(20):
 
-            
-            #wlan.connect('Bait_F-02_1521', '1234567890')
-            
+
+
+
             time.sleep_ms(300)
             if wlan.isconnected():
                 break
@@ -282,8 +379,8 @@ def map_value(x, in_min, in_max, out_min, out_max):
 EMOTION_COLORS = {
     "Enojo":      (255,   0,   0, 255),
     "Asco":       (120, 200,  60, 255),
-    "Miedo":      (40,   80, 160, 255),
-    "Felicidad":  (255, 220,   0, 255),
+    "Miedo":      (255, 255, 0, 255),
+    "Felicidad":  (255, 120,   0, 255),
     "Tristeza":   (100, 130, 250, 255),
     "Sorpresa":   (220,  80, 200, 255),
     "Neutral":    (200, 200, 200, 255),
@@ -380,32 +477,59 @@ gesture_timer = 0
 gesture_step_delay = 40  # dinamico
 
 def update_gesture_scheduler():
-    global gesture_timer, gesture_active
+    global gesture_timer, gesture_active, gesture_queue
 
+    # --- protección: si la cola crece demasiado → reset ---
+    if len(gesture_queue) > 50:
+        gesture_queue = []
+        gesture_active = False
+        return
+
+    # --- si no hay nada que ejecutar ---
     if not gesture_queue:
         gesture_active = False
         return
 
     now = time.ticks_ms()
+
     if time.ticks_diff(now, gesture_timer) >= gesture_step_delay:
         ch, pos = gesture_queue.pop(0)
+
+        # =========================
+        # CLAMP DE SEGURIDAD
+        # =========================
+        if ch == SERVO_EJE_Y:
+            pos = max(0, min(20, pos))   #  0–20°
+
+        elif ch == SERVO_CABEZA:
+            pos = max(0, min(30, pos))   # 0–30°
+
+        # mover servo
         s.position(ch, pos)
+
         gesture_timer = now
 
-
+#maximo de gestos
+MAX_QUEUE = 20
 def enqueue_move(ch, start, end, steps):
+    global gesture_queue
+    if len(gesture_queue) > MAX_QUEUE:
+        gesture_queue = []  # reset gestos
+
     delta = (end - start) / steps
     pos = start
     for _ in range(steps):
         pos += delta
         gesture_queue.append((ch, int(pos)))
 
-
-SERVO_EJE_Y   = 3   # movimiento vertical (0–40°)
-SERVO_CABEZA  = 4   # head tilt tipo perro (0–60°)
+SERVO_EJE_Y   = 3   # movimiento vertical (0–20°)
+SERVO_CABEZA  = 4   # head tilt tipo perro (0–30°)
+#  LIMITES
+MIN_Y, MAX_Y = 0, 20
+MIN_TILT, MAX_TILT = 0, 30
 # Posiciones neutras
-NEUTRO_Y     = 20
-NEUTRO_TILT  = 30
+NEUTRO_Y     = 10
+NEUTRO_TILT  = 15
 
 def schedule_emotional_gesture(emotion):
     global gesture_active, gesture_step_delay
@@ -565,7 +689,7 @@ class FaceEmotion:
                     #s.position(2, My_centerz)
                     #s.position(3, My_centerxx)
                     #s.position(4, My_centerxr)
-                    time.sleep(0.06 )
+                    #time.sleep(0.06 )
                     schedule_emotional_gesture(emotion)
                     cara = False
                 x = x * self.display_size[0] // self.rgb888p_size[0]
@@ -604,6 +728,7 @@ class FaceEmotion:
 # ==========================================================
 # MAIN
 # ==========================================================
+
 if __name__=="__main__":
     display_mode = "lcd"
     display_size = [800, 480]
@@ -634,11 +759,22 @@ if __name__=="__main__":
                      confidence_threshold, nms_threshold,
                      rgb888p_size, display_size)
     WIFI_Connect(pl)
-
+    #refres osd
+    last_refresh = 0
     while True:
+        now = time.ticks_ms()
+
+        if time.ticks_diff(now, last_refresh) > 10000:  # cada 10 seg
+            pl.osd_img.clear()
+            gc.collect()
+            last_refresh = now
         with ScopedTiming("total",1):
             img = pl.get_frame()                # Captura la frame
-            dets, emotions = fe.run(img)        # Inferencia
+            try:
+                dets, emotions = fe.run(img) #inferencia
+            except Exception as e:
+                print(" Error AI:", e)
+                continue
             fe.draw_result(pl, dets, emotions)  # Dibuja resultados
             pl.show_image()                     # Muestra en pantalla
             procesar_envios_pendientes()
