@@ -23,8 +23,8 @@ void draw_spanish() {
     int lh = 22;
 
     // TITULO
-    drawBold(x, y, "Soplame(Olfato:capullos de aliento)", &Font16);
-    y += 22;
+    drawBold(x, y, "Soplame dentro de la boquilla ceramica", &Font16);
+    y += 24;
 
     // FICHA
     Paint_DrawString_EN(x, y, "Componentes electronicos, servomotores,", &Font12, EPD_4IN2G_WHITE, EPD_4IN2G_BLACK);
@@ -71,7 +71,7 @@ void draw_english() {
     int x = 10;
     int y = 20;
     int lh = 18;
-    drawBold(x, y, "Blow me (breath cocoons)", &Font20);
+    drawBold(x, y, "Blow into the ceramic nozzle", &Font20);
     y += 24;
     Paint_DrawString_EN(x, y, "Variations in air composition - ", &Font16, EPD_4IN2G_WHITE, EPD_4IN2G_BLACK);
     y += lh;
@@ -123,8 +123,8 @@ void setup() {
 void loop() {
 
     // ===== IMAGEN FULL =====
-    EPD_4IN2G_Display(nose);
-    DEV_Delay_ms(4000);
+    //EPD_4IN2G_Display(nose);
+    //DEV_Delay_ms(4000);
 
     // ===== ESPAÑOL =====
     draw_spanish();
