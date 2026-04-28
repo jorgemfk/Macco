@@ -7,6 +7,17 @@
 // =======================
 // ====== SERVO CONFIG ===
 // =======================
+#define SERVO_180_PIN_2 32
+#define SERVO_180_PIN_3 33
+
+Servo servo180_2;
+Servo servo180_3;
+
+// estado gusano loco
+bool gusanoActivo = false;
+unsigned long gusanoInicioMs = 0;
+const unsigned long DURACION_GUSANO_MS = 7000;
+
 #define SERVO_360_PIN 26   // servo continuo 360
 #define SERVO_180_PIN 25   // servo posicional 180
 
@@ -31,7 +42,6 @@ const unsigned long DURACION_SERVO_MS = 15000; // 5 segundos
 
 // WIFI CONFIG
 const char* ssid = "JORGEMFK";
-
 const char* serverUrl = "http://192.168.0.82:5823/olfato";
 
 // =======================
@@ -163,70 +173,69 @@ void actualizarServos() {
   unsigned long ahora = millis();
   unsigned long t = ahora - servoInicioMs;
 
-  // terminar a los 5 segundos
+  // terminar a los 15 segundos
   if (t >= DURACION_SERVO_MS) {
-    servoActivo = false;
-    detenerServos();
-    Serial.println("Movimiento terminado (5s)");
-    return;
-  }
+      servoActivo = false;
+      detenerServos();
+
+      // activar gusano loco
+      gusanoActivo = true;
+      gusanoInicioMs = millis();
+
+      Serial.println("Movimiento principal terminado → inicia gusano loco");
+      return;
+    }
 
   // -----------------------------
   // SERVO 360 (pin 26)
   // -----------------------------
-  // Rampa de aceleración en los primeros 1500ms
-  float factor = 1.0;
+
   const unsigned long RAMPA_MS = 1500;
 
+  // aceleración inicial
+  float factor = 1.0;
   if (t < RAMPA_MS) {
     factor = (float)t / (float)RAMPA_MS;
   }
 
-  int offsetMax = 0;
-  int direccion = 0;
+  float velocidadBase = (estadoServoPrev == 1) ? 320.0 : 180.0;
 
-  if (estadoServoPrev == 1) {
-    // estado 1 = más agresivo, sentido 1
-    offsetMax = 320;   // velocidad máxima
-    direccion = +1;    // un sentido
-  } else if (estadoServoPrev == 2) {
-    // estado 2 = más suave, sentido contrario
-    offsetMax = 180;   // velocidad menor
-    direccion = -1;    // sentido contrario
-  }
+  // onda suave que invierte dirección (ida y vuelta)
+  float onda = sin(2.0 * PI * (t / 1200.0));
 
-  int offsetActual = (int)(offsetMax * factor);
-  int us360 = SERVO360_STOP_US + (direccion * offsetActual);
+  int offsetActual = velocidadBase * onda * factor;
+
+  int us360 = SERVO360_STOP_US + offsetActual;
   us360 = constrain(us360, SERVO360_MIN_US, SERVO360_MAX_US);
+
   servo360.writeMicroseconds(us360);
 
   // -----------------------------
   // SERVO 180 (pin 25)
   // -----------------------------
-  // movimiento tipo "torcedura" con seno
-  // estado 1 y 2 tienen diferente amplitud y número de ciclos
-  float progreso = (float)t / (float)DURACION_SERVO_MS; // 0.0 a 1.0
 
-  float ciclos = 0.0;
+  float progreso = (float)t / (float)DURACION_SERVO_MS;
+
+  float ciclos = (estadoServoPrev == 1) ? 4.0 : 2.0;
   int centro = 90;
-  int amplitud = 0;
+  int amplitud = (estadoServoPrev == 1) ? 40 : 70;
 
-  if (estadoServoPrev == 1) {
-    // 4 torceduras medianas
-    ciclos = 4.0;
-    centro = 90;
-    amplitud = 40; // 50 a 130 aprox
-  } else if (estadoServoPrev == 2) {
-    // 2 torceduras amplias
-    ciclos = 2.0;
-    centro = 90;
-    amplitud = 70; // 20 a 160 aprox
-  }
+  // ondas mezcladas (no perfectas)
+  float onda1 = sin(2.0 * PI * ciclos * progreso);
+  float onda2 = sin(2.0 * PI * (ciclos * 2.3) * progreso + 1.5);
 
-  // curva seno
-  float ang = centro + amplitud * sin(2.0 * PI * ciclos * progreso);
+  float mezcla = (onda1 * 0.7) + (onda2 * 0.3);
 
-  // pequeña "entrada" suave en los primeros 300 ms
+  // deformación no lineal → efecto orgánico
+  float gusano = mezcla * abs(mezcla);
+
+  float ang = centro + amplitud * gusano;
+
+  // pequeño jitter (vida)
+  float ruido = sin(t * 0.01) * 5.0;
+  ang += ruido;
+
+  // entrada suave
   if (t < 300) {
     float entrada = (float)t / 300.0;
     ang = SERVO180_HOME + (ang - SERVO180_HOME) * entrada;
@@ -235,15 +244,63 @@ void actualizarServos() {
   int angulo180 = constrain((int)ang, SERVO180_MIN_DEG, SERVO180_MAX_DEG);
   servo180.write(angulo180);
 
-  // debug
+  // -----------------------------
+  // DEBUG
+  // -----------------------------
   Serial.print("t=");
   Serial.print(t);
-  Serial.print(" | estado=");
-  Serial.print(estadoServoPrev);
   Serial.print(" | us360=");
   Serial.print(us360);
   Serial.print(" | ang180=");
   Serial.println(angulo180);
+}
+
+void actualizarGusanoLoco() {
+  if (!gusanoActivo) return;
+
+  unsigned long t = millis() - gusanoInicioMs;
+
+  if (t >= DURACION_GUSANO_MS) {
+    gusanoActivo = false;
+
+    servo180_2.write(90);
+    servo180_3.write(90);
+
+    Serial.println("Gusano loco terminado");
+    return;
+  }
+
+  // movimiento caótico acoplado
+  float tiempo = t * 0.002;
+
+  float ondaA = sin(tiempo * 3.0);
+  float ondaB = sin(tiempo * 5.7 + 1.3);
+  float ondaC = sin(tiempo * 9.1 + 2.1);
+
+  float mezcla = (ondaA + ondaB + ondaC) / 3.0;
+
+  // no linealidad
+  float deformado = mezcla * abs(mezcla);
+
+  // desfasados entre sí (clave visual)
+  float fase2 = deformado;
+  float fase3 = sin(tiempo * 4.3 + deformado);
+
+  int ang2 = 90 + 60 * fase2;
+  int ang3 = 90 + 60 * fase3;
+
+  ang2 = constrain(ang2, 10, 170);
+  ang3 = constrain(ang3, 10, 170);
+
+  servo180_2.write(ang2);
+  servo180_3.write(ang3);
+
+  Serial.print("GUSANO t=");
+  Serial.print(t);
+  Serial.print(" | s32=");
+  Serial.print(ang2);
+  Serial.print(" | s33=");
+  Serial.println(ang3);
 }
 
 // =======================
@@ -265,6 +322,16 @@ void setup() {
   // Servo 180
   servo180.setPeriodHertz(50);
   servo180.attach(SERVO_180_PIN, 500, 2500);
+
+  servo180_2.setPeriodHertz(50);
+  servo180_2.attach(SERVO_180_PIN_2, 500, 2500);
+
+  servo180_3.setPeriodHertz(50);
+  servo180_3.attach(SERVO_180_PIN_3, 500, 2500);
+
+  // posición inicial
+  servo180_2.write(90);
+  servo180_3.write(90);
 
   // posiciones iniciales
   detenerServos();
@@ -360,6 +427,7 @@ void loop() {
 
   // actualizar animación de servos
   actualizarServos();
+  actualizarGusanoLoco();
 
   // ---------------- ENVIO DATA ----------------
   String nivel = nivelRaw(raw135);

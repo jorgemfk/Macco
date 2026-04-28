@@ -28,8 +28,8 @@ void draw_text_all() {
 
   // ===== TITULO =====
   Paint_SelectImage(BlackImage);
-  drawBold(x, y, "Hablame (Oido: coreografia orientada)", &Font24);
-  y += 30;
+  drawBold(x, y, "Hablame dirigido al circulo blanco (coreografia orientada)", &Font24);
+  y += 40;
 
   // ===== FICHA =====
   Paint_DrawString_EN(x, y, "Componentes electronicos, servomotores,", &Font16, WHITE, BLACK);

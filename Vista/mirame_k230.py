@@ -248,7 +248,7 @@ def procesar_envios_pendientes():
     ahora = time.ticks_ms()
 
     # =========================
-    # 🧹 LIMPIAR VENTANA (1 min)
+    #  LIMPIAR VENTANA (1 min)
     # =========================
     envios_timestamps = [
         t for t in envios_timestamps
@@ -256,7 +256,7 @@ def procesar_envios_pendientes():
     ]
 
     # =========================
-    # 🚫 LIMITE DE 3 POR MINUTO
+    #  LIMITE DE 3 POR MINUTO
     # =========================
     if len(envios_timestamps) >= MAX_ENVIOS_POR_MIN:
         print(" Límite alcanzado limpiando cola")
@@ -272,14 +272,14 @@ def procesar_envios_pendientes():
     resumen = pendientes.pop(0)
 
     # =========================
-    # 🚫 FILTRO DUPLICADOS
+    #  FILTRO DUPLICADOS
     # =========================
     if resumen == ultimo_resumen_enviado:
-        print("⏭️ Duplicado descartado:", resumen)
+        print("⏭ Duplicado descartado:", resumen)
         return
 
     # =========================
-    # 🚀 ENVÍO
+    #  ENVÍO
     # =========================
     enviar_emociones_hilo(resumen)
 
@@ -329,7 +329,7 @@ def WIFI_Connect(pl):
     WIFI_LED=Pin(52, Pin.OUT)
     pl.osd_img.draw_rectangle(0, 440, 800, 40, color=(120, 0, 0, 0), thickness=-1)
     wlan = network.WLAN(network.STA_IF)
-    #wlan.disconnect()        # 🔹 Rompe cualquier conexión previa
+    #wlan.disconnect()        #  Rompe cualquier conexión previa
     time.sleep(0.5)
     wlan.active(True)
     mostrar_mensaje(pl, "Conectando WiFi...")
@@ -650,7 +650,7 @@ class FaceEmotion:
 
     def draw_result(self, pl, dets, emotions):
         pl.osd_img.clear()
-        update_servo5(face_detected = bool(dets))
+        #update_servo5(face_detected = bool(dets))
         update_gesture_scheduler()
         if dets:
             resumen = {}
@@ -683,7 +683,8 @@ class FaceEmotion:
                     print(self.display_size[0] // self.rgb888p_size[0])
                     # Mover servos
                     s.position(0, My_centerx)
-                    s.position(1, My_centery)
+                    #s.position(1, My_centery)
+                    #s.position(1, 40)
                     #time.sleep(0.06 )
                     s.position(2,  My_centerz)
                     #s.position(2, My_centerz)
@@ -761,6 +762,8 @@ if __name__=="__main__":
     WIFI_Connect(pl)
     #refres osd
     last_refresh = 0
+    #temporal no mueve eje y
+    s.position(1, 35)
     while True:
         now = time.ticks_ms()
 

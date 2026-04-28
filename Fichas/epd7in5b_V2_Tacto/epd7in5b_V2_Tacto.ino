@@ -28,8 +28,8 @@ void draw_text_all() {
 
   // ===== TITULO =====
   Paint_SelectImage(BlackImage);
-  drawBold(x, y, "Tocame (Tacto: cuerpo evasivo)", &Font24);
-  y += 30;
+  drawBold(x, y, "Tocame en las antenas negras (cuerpo evasivo)", &Font24);
+  y += 33;
 
   // ===== FICHA =====
   Paint_DrawString_EN(x, y, "Componentes electronicos, servomotores,", &Font16, WHITE, BLACK);

@@ -5,11 +5,8 @@ import network
 import ustruct
 
 # ========== CONFIGURACIÓN ==========
-SSID = "Bait_F-02_1521"
-PASW = "1234567890"
-SERVER_IP = "192.168.0.200"   # IP de tu Raspberry Pi
-#SSID = "casaMatamoros2G"
-#PASW = "arteyhospedaje2025"
+SSID = "JORGEMFK"
+SERVER_IP = "192.168.0.82"   # IP de tu Raspberry Pi
 #SERVER_IP = "192.168.0.4"   # IP de tu Raspberry Pi
 SERVER_PORT = 5821
 
@@ -126,6 +123,8 @@ def enviar_audio():
     size = os.stat(FILENAME)[6]
     print("Enviando archivo de", size, "bytes")
 
+    response = None  #  AGREGA
+
     with open(FILENAME, "rb") as f:
         s = socket.socket()
         s.settimeout(10)
@@ -136,17 +135,27 @@ def enviar_audio():
             "Content-Type: application/octet-stream\r\n"
             "Content-Length: {}\r\n\r\n"
         ).format(SERVER_IP, size)
+
+        #"Connection: close\r\n\r\n"  #  AGREGA
         try:
             s.send(header)
+            #s.send(header.encode()) #agrega
             while True:
                 chunk = f.read(512)
                 if not chunk:
                     break
                 s.send(chunk)
-            response = s.recv(1024)
+            response = b""
+            while True:                #  leer respuesta completa
+                part = s.recv(1024)
+                if not part:
+                    break
+                response += part
         except Exception as e:
+            print("Error Envio:", e)
             lcd.draw_string(10, 10, "Error Envio", lcd.WHITE, lcd.RED)
-        s.close()
+        finally:
+            s.close()
 
     # === Limpiar respuesta HTTP ===
     try:
@@ -166,7 +175,7 @@ def enviar_audio():
         return None
 
 # ==== LOOP PRINCIPAL ====
-ultimo_texto = "Esperando sonido..."
+ultimo_texto = "Hablame..."
 lcd.clear(lcd.WHITE)
 lcd.draw_string(10, 10, "Volumen: --", lcd.BLACK, lcd.WHITE)
 draw_centered_text(ultimo_texto)
