@@ -171,6 +171,30 @@ for cfg in ULTRASONICS:
 
 time.sleep(0.8)
 
+#medir energia
+def send_power_and_print_raw():
+    """
+    Envia CMD_POWER y muestra la respuesta cruda del server.
+    Ejemplo esperado: ['CMD_POWER','8.15','9.0']
+    """
+    try:
+        send_cmd("CMD_POWER#")
+
+        sock.settimeout(1.5)
+
+        data = sock.recv(1024).decode().strip()
+
+        if data:
+            print(" SERVER RAW:", data)
+        else:
+            print(" respuesta vacía")
+
+    except Exception as e:
+        print(" error CMD_POWER:", e)
+
+    finally:
+        sock.settimeout(None)
+
 # =============================
 # SERVO PCA9685
 # =============================
@@ -281,7 +305,7 @@ def send_move(x, y, steps=8):
 
 def send_stop():
     send_cmd("CMD_MOVE#1#0#0#8#0")
-    print("⏹ STOP")
+    print(" STOP")
 
 def send_position(x, y):
     x = int(clamp(round(x), -15, 15))
@@ -402,7 +426,7 @@ def rear_vector_from_angle(angle_deg):
 
 def choose_best_direction():
     """
-    Elige la dirección con mayor distancia medible.
+    Elige la direccion con mayor distancia medible.
     Retorna: (vx, vy, label, dist)
     """
     candidates = []
@@ -760,7 +784,7 @@ def run_touch_session(pin):
         time.sleep(0.15)
 
     else:
-        print("⚠ Sin datos iniciales de distancia, entrando en modo exploración")
+        print(" Sin datos iniciales de distancia, entrando en modo exploración")
 
     session_start = time.time()
     last_move_time = 0.0
@@ -774,7 +798,7 @@ def run_touch_session(pin):
         if last_move_vector[0] is None:
             need_move = True
         elif is_vector_blocked(last_move_vector[0], last_move_vector[1]):
-            print(" Dirección actual bloqueada, recalculando...")
+            print(" Direccion actual bloqueada, recalculando...")
             need_move = True
         elif time.time() - last_move_time >= RECHECK_INTERVAL:
             need_move = True
@@ -809,8 +833,10 @@ def run_touch_session(pin):
         # pequeño sleep para no saturar CPU
         time.sleep(0.03)
 
-    print("⏹ Fin de sesión touch -> STOP")
+    print(" Fin de sesión touch -> STOP")
     send_stop()
+
+    send_power_and_print_raw()
 
     # desactivar escaneo activo (servos volverán al centro por el hilo)
     touch_active = False
@@ -824,6 +850,7 @@ def run_touch_session(pin):
 touch_latched = False  # True = ya se disparó una sesión y aún no se ha soltado
 servo.set_angle(0, 70)
 try:
+    send_power_and_print_raw()
     while True:
         active_pin = get_active_touch_pin()
 
