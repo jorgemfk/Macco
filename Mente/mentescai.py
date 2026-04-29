@@ -842,6 +842,9 @@ Restricciones:
 - No inventes funciones, clases ni metodos.
 - No uses  .delay().
 - No incluyas comentarios ni explicaciones.
+- amp debe estar SIEMPRE entre 0.03 y 0.15
+- la suma total no debe saturar
+- evita clipping
 - Usa formato estandar ejemplo:
 (
 SynthDef(...).add;
