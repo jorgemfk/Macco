@@ -55,6 +55,14 @@ POST_READ_PAUSE = 0.04
 SENSOR_INTERLEAVE_PAUSE = 0.06
 
 # =============================
+# SERVO POWER MANAGEMENT
+# =============================
+SERVO_IDLE_TIMEOUT = 60.0  # 1 minuto sin toque
+
+servo_power_on = True
+last_touch_time = time.time()
+
+# =============================
 # LÍMITES MOVIMIENTO ROBOT
 # =============================
 MAX_AXIS = 25
@@ -171,6 +179,43 @@ for cfg in ULTRASONICS:
 
 time.sleep(0.8)
 
+#comando generrico
+def send_and_print_raw(cmd):
+    try:
+        send_cmd(cmd)
+
+        sock.settimeout(1.5)
+        data = sock.recv(1024).decode().strip()
+
+        if data:
+            print(" RAW:", data)
+        else:
+            print(" respuesta vacía")
+
+    except Exception as e:
+        print(" socket:", e)
+
+    finally:
+        sock.settimeout(None)
+
+#servo on
+def ensure_servo_on():
+    global servo_power_on
+
+    if not servo_power_on:
+        print(" Activando servos...")
+        send_and_print_raw("CMD_SERVOPOWER#1")
+        time.sleep(0.3)  #  tiempo para estabilizar antes de mover
+        servo_power_on = True
+#servo off
+def check_servo_idle():
+    global servo_power_on
+
+    if servo_power_on and (time.time() - last_touch_time > SERVO_IDLE_TIMEOUT):
+        print(" Inactividad -> apagando servos")
+        send_and_print_raw("CMD_SERVOPOWER#0")
+        servo_power_on = False
+
 #medir energia
 def send_power_and_print_raw():
     """
@@ -178,22 +223,10 @@ def send_power_and_print_raw():
     Ejemplo esperado: ['CMD_POWER','8.15','9.0']
     """
     try:
-        send_cmd("CMD_POWER#")
-
-        sock.settimeout(1.5)
-
-        data = sock.recv(1024).decode().strip()
-
-        if data:
-            print(" SERVER RAW:", data)
-        else:
-            print(" respuesta vacía")
-
+        send_and_print_raw("CMD_POWER#")
     except Exception as e:
         print(" error CMD_POWER:", e)
 
-    finally:
-        sock.settimeout(None)
 
 # =============================
 # SERVO PCA9685
@@ -547,7 +580,7 @@ def ultrasonic_loop():
         idx += 1
 
         print(
-            f"📡 F:{d_front}@{servo_angles['front']}° | "
+            f" F:{d_front}@{servo_angles['front']}° | "
             f"R:{d_rear}@{servo_angles['rear']}° | "
             f"L:{d_left} | X:{d_right}"
         )
@@ -733,7 +766,12 @@ def get_active_touch_pin():
 # Sigue leyendo ultrasonic por hilo paralelo
 # =============================
 def run_touch_session(pin):
-    global touch_active
+    global touch_active, last_touch_time
+
+    last_touch_time = time.time()
+
+    # asegurar servos encendidos antes de moverse
+    ensure_servo_on()
 
     behavior = TOUCH_BEHAVIOR[pin]
     session_duration = random.uniform(
@@ -853,9 +891,10 @@ try:
     send_power_and_print_raw()
     while True:
         active_pin = get_active_touch_pin()
-
+        check_servo_idle()
         # ---------- NUEVO TOUCH (solo si no está latched) ----------
         if active_pin is not None and not touch_latched:
+            last_touch_time = time.time()
             touch_latched = True
 
             # Ejecuta una sola sesión completa
