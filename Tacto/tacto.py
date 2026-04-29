@@ -79,6 +79,7 @@ TOUCH_BEHAVIOR = {
         "steps": 6,
         "jitter": 2,
         "explore": 1.0,
+        "tipo_mov": 1,
         "session_min": 3.0,
         "session_max": 4.5,
         "shake": ['CMD_POSITION#8#3#0', 'CMD_POSITION#8#2#0', 
@@ -108,6 +109,7 @@ TOUCH_BEHAVIOR = {
         "steps": 9,
         "jitter": 4,
         "explore": 1.4,
+        "tipo_mov": 2,
         "session_min": 4.0,
         "session_max": 6.0,
         "shake": [
@@ -123,6 +125,7 @@ TOUCH_BEHAVIOR = {
         "steps": 4,
         "jitter": 1,
         "explore": 0.8,
+        "tipo_mov": 2,
         "session_min": 3.0,
         "session_max": 4.0,
         "shake": ['CMD_POSITION#8#3#0', 'CMD_POSITION#8#2#0', 
@@ -146,6 +149,7 @@ TOUCH_BEHAVIOR = {
         "steps": 10,
         "jitter": 5,
         "explore": 1.8,
+        "tipo_mov": 2,
         "session_min": 4.0,
         "session_max": 6.0,
         "shake": ['CMD_POSITION#8#3#0', 'CMD_POSITION#8#2#0',                  
@@ -328,11 +332,13 @@ def send_cmd(cmd):
         cmd += "\n"
     sock.send(cmd.encode())
 
-def send_move(x, y, steps=8):
+def send_move(pin, x, y, steps=8):
+    behavior = TOUCH_BEHAVIOR.get(pin, {})
+    move_id = behavior.get("tipo_mov", 1)  # fallback a 1
     x = int(clamp(round(x), -MAX_AXIS, MAX_AXIS))
     y = int(clamp(round(y), -MAX_AXIS, MAX_AXIS))
     steps = int(clamp(steps, 1, MAX_STEPS))
-    cmd = f"CMD_MOVE#1#{x}#{y}#{steps}#0"
+    cmd = f"CMD_MOVE#{move_id}#{x}#{y}#{steps}#0"
     send_cmd(cmd)
     print("➡", cmd)
 
@@ -813,7 +819,7 @@ def run_touch_session(pin):
             f"vec=({vx},{vy}) -> move=({x:.1f},{y:.1f}) steps={steps}"
         )
 
-        send_move(x, y)
+        send_move(pin, x, y)
 
         last_move_vector = (x, y)
         last_move_time = time.time()
@@ -855,7 +861,7 @@ def run_touch_session(pin):
                 y = random.uniform(-behavior["base_speed"], behavior["base_speed"])
                 steps = clamp(behavior["steps"], 1, MAX_STEPS)
                 print(" Sin lecturas válidas -> exploración")
-                send_move(x, y)
+                send_move(pin, x, y)
                 last_move_vector = (x, y)
             else:
                 x, y, steps = vector_to_move(pin, vx, vy)
@@ -863,7 +869,7 @@ def run_touch_session(pin):
                     f" space_vector=({vx:.2f}, {vy:.2f}) "
                     f"mag={mag:.2f} -> move=({x:.1f}, {y:.1f}) steps={steps}"
                 )
-                send_move(x, y)
+                send_move(pin, x, y)
                 last_move_vector = (x, y)
 
             last_move_time = time.time()
