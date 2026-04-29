@@ -859,6 +859,7 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
         try: 
             #CLAUDE
             if USE_CLAUDE:
+                print(f"Usando CLAUDE")
                 response = claude.messages.create(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=4096,
@@ -870,6 +871,7 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
 
                 sc_code = response.content[0].text.strip()
             else:
+                print(f"Usando OPENAI")
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=chat_history,
@@ -877,7 +879,7 @@ El resultado debe ser expresivo y musicalmente coherente, no simple.
                 )
                 sc_code = response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"Error inesperado: {type(e).__name__}: {e}")
+            print(f"Error inesperado usa OPENAI: {type(e).__name__}: {e}")
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=chat_history,
