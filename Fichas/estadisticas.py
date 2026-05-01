@@ -12,7 +12,7 @@ import calendar
 
 app = Flask(__name__)
 
-LOG_DIR = "/home/jorge/logsMacco"
+LOG_DIR = "/home/jorge/logMacco"
 
 
 def procesar_mes(mes, anio):
@@ -51,9 +51,38 @@ def generar_grafica(conteo, mes, anio):
     dias_mes = calendar.monthrange(anio, mes)[1]
     x = list(range(1, dias_mes + 1))
 
+    totales = [0] * dias_mes  # acumulador por día
+
+    # colores opcionales
+    colores = {
+        "oido": "blue",
+        "vista": "green",
+        "tacto": "red",
+        "olfato": "orange"
+    }
+
     for sentido, dias in conteo.items():
         y = [dias.get(d, 0) for d in x]
-        plt.plot(x, y, marker='o', label=sentido)
+
+        # acumular totales
+        for i in range(dias_mes):
+            totales[i] += y[i]
+
+        plt.plot(
+            x, y,
+            marker='o',
+            label=sentido,
+            color=colores.get(sentido)
+        )
+
+    # 🔥 línea de totales
+    plt.plot(
+        x, totales,
+        linestyle='--',
+        linewidth=2,
+        color='black',
+        label='total'
+    )
 
     plt.title(f"Eventos por sentido - {mes}/{anio}")
     plt.xlabel("Día")
