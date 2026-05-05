@@ -84,6 +84,8 @@ def generar_grafica(conteo, mes, anio):
         label='total'
     )
 
+    plt.xticks(x, rotation=45)
+    
     plt.title(f"Eventos por sentido - {mes}/{anio}")
     plt.xlabel("Día")
     plt.ylabel("Eventos")
