@@ -667,7 +667,7 @@ class FaceEmotion:
                     face_center_tilt = y + half_height
 
                     # Convertir coordenadas a ángulos de servo
-                    My_centerx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 120, 0)
+                    My_centerx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 0, 120)
                     My_centerxx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 90, 0)
                     My_centerxr = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 40, 0)
 
@@ -686,9 +686,9 @@ class FaceEmotion:
                     #s.position(1, My_centery)
                     #s.position(1, 40)
                     #time.sleep(0.06 )
-                    s.position(2,  My_centerz)
+                    s.position(2,  My_centery)
                     #s.position(2, My_centerz)
-                    #s.position(3, My_centerxx)
+                    s.position(3, My_centerz)
                     #s.position(4, My_centerxr)
                     #time.sleep(0.06 )
                     schedule_emotional_gesture(emotion)

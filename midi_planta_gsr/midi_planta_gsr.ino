@@ -84,8 +84,8 @@ void loop() {
   float delta =
       fabs(filtered - lastFiltered);
 
-  // actividad amplificada
-  float actividad = delta * 120.0;
+  // actividad amplificada 120 default 500 alto
+  float actividad = delta * 500.0;
 
   // ------------------------
   // SERVO

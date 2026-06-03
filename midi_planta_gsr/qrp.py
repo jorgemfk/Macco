@@ -108,6 +108,56 @@ def generar_qr(data):
     qr.make(fit=True)
     return qr.get_matrix()
 
+# =========================================
+# QR OPTIMIZADO
+# =========================================
+
+def dibujar_segmento(sock, x1, x2, y):
+
+    rapido(sock, x1, y)
+
+    cmd(sock, "G0 Z-4")
+
+    mover(sock, x2, y)
+
+    cmd(sock, "G0 Z0")
+
+
+def dibujar_qr_lineas(sock, matriz, cell):
+
+    n = len(matriz)
+
+    for fila in range(n):
+
+        col = 0
+
+        while col < n:
+
+            check_pause()
+
+            # buscar inicio de tramo negro
+            while col < n and not matriz[fila][col]:
+                col += 1
+
+            if col >= n:
+                break
+
+            inicio = col
+
+            # buscar final del tramo
+            while col < n and matriz[fila][col]:
+                col += 1
+
+            fin = col - 1
+
+            # centro de módulos
+            x1 = inicio * cell + cell / 2
+            x2 = fin * cell + cell / 2
+
+            y = (n - fila) * cell
+
+            dibujar_segmento(sock, x1, x2, y)
+
 def dibujar_cuadro(sock, x, y, s):
     rapido(sock, x, y)
 
@@ -226,17 +276,7 @@ def main():
     # =====================================
     # DIBUJAR QR
     # =====================================
-    for i in range(n):
-        for j in range(n):
-
-            check_pause()
-
-            if matriz[i][j]:
-
-                x = j * cell
-                y = (n - i) * cell
-
-                dibujar_cuadro(sock, x, y, cell)
+    dibujar_qr_lineas(sock, matriz, cell)
 
     # =====================================
     # TEXTO
