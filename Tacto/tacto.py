@@ -28,7 +28,7 @@ ULTRASONICS = [
     {"trigger": 26, "echo": 16, "name": "right"},
 ]
 
-MAX_DISTANCE_CM = 300.0
+MAX_DISTANCE_CM = 400.0
 OBSTACLE_CM = 30.0
 RECHECK_INTERVAL = 0.12    # evita saturar server / recalcular demasiado rápido
 
@@ -52,7 +52,7 @@ REAR_PATTERN  = [65, 50, 45, 35, 20, 30, 45, 60]
 SERVO_SETTLE_TIME = 0.06
 READ_BETWEEN_SAMPLES = 0.06
 POST_READ_PAUSE = 0.04
-SENSOR_INTERLEAVE_PAUSE = 0.06
+SENSOR_INTERLEAVE_PAUSE = 0.08
 
 # =============================
 # SERVO POWER MANAGEMENT
@@ -462,33 +462,81 @@ def rear_vector_from_angle(angle_deg):
     mag = math.sqrt(x*x + y*y) or 1.0
     return (x / mag, y / mag)
 
+def wait_for_initial_scan(timeout=1.2):
+    """
+    Espera a que existan varias lecturas antes
+    de decidir el primer movimiento.
+    """
+
+    start = time.time()
+
+    while time.time() - start < timeout:
+
+        valid_count = sum(
+            1 for d in distances_state.values()
+            if d is not None
+        )
+
+        if valid_count >= 2:
+            return True
+
+        time.sleep(0.05)
+
+    return False
 
 def choose_best_direction():
     """
-    Elige la direccion con mayor distancia medible.
-    Retorna: (vx, vy, label, dist)
+    Elige la dirección inicial.
+
+    Casos:
+
+    - 4 lecturas -> mayor distancia.
+    - 2 o más lecturas -> mayor distancia.
+    - 1 lectura -> elegir aleatoriamente uno de los sensores SIN lectura.
+    - 0 lecturas -> None.
     """
-    candidates = []
 
-    if distances_state["front"] is not None:
-        candidates.append(("front", distances_state["front"], 0, 1))
+    valid = []
+    missing = []
 
-    if distances_state["rear"] is not None:
-        candidates.append(("rear", distances_state["rear"], 0, -1))
+    sensors = [
+        ("front", 0, 1),
+        ("rear", 0, -1),
+        ("left", -1, 0),
+        ("right", 1, 0),
+    ]
 
-    if distances_state.get("left") is not None:
-        candidates.append(("left", distances_state["left"], -1, 0))
+    for label, vx, vy in sensors:
 
-    if distances_state.get("right") is not None:
-        candidates.append(("right", distances_state["right"], 1, 0))
+        d = distances_state.get(label)
 
-    if not candidates:
+        if d is None:
+            missing.append((label, vx, vy))
+        else:
+            valid.append((label, d, vx, vy))
+
+    if len(valid) == 0:
         return None, None, None, None
 
-    # elegir mayor distancia
-    best = max(candidates, key=lambda x: x[1])
+    # SOLO UNA LECTURA
+    if len(valid) == 1 and len(missing) > 0:
+
+        label, dist, _, _ = valid[0]
+
+        alt_label, alt_vx, alt_vy = random.choice(missing)
+
+        print(
+            f" SOLO UNA LECTURA ({label}={dist}cm) "
+            f"-> usando dirección aleatoria sin lectura: {alt_label}"
+        )
+
+        return alt_vx, alt_vy, alt_label, None
+
+    # CASO NORMAL
+    best = max(valid, key=lambda x: x[1])
 
     label, dist, vx, vy = best
+
     return vx, vy, label, dist
 
 # =============================
@@ -701,7 +749,7 @@ def vector_to_move(pin, vx, vy):
     x = nx * speed
     y = ny * speed
 
-    # 🔥 CLAVE: detectar ejes activos reales
+    # detectar ejes activos reales
     x_active = abs(vx) > 0.01
     y_active = abs(vy) > 0.01
 
@@ -790,7 +838,8 @@ def run_touch_session(pin):
 
     # activar escaneo ultrasonic
     touch_active = True
-
+    # esperar primeras lecturas del escaneo
+    wait_for_initial_scan()
     # cadera inicial antes de moverse
     do_shake_for_touch(pin)
     time.sleep(0.08)
@@ -835,7 +884,7 @@ def run_touch_session(pin):
     last_move_vector = (None, None)
 
     # Mantener sesión aunque el dedo siga o ya no siga:
-    # la idea es cumplir su exploración completa
+    # cumplir su exploración completa
     while (time.time() - session_start) < session_duration:
         need_move = False
 
