@@ -94,6 +94,93 @@ def stop_servo():
 #filtro redis
 
 LOG_DIR = "/home/jorge/logMacco"
+#recuerdos
+def cargar_recuerdos_recientes(n=20):
+
+    recuerdos = []
+
+    archivos = sorted(os.listdir(LOG_DIR))
+
+    for nombre in reversed(archivos):
+
+        ruta = os.path.join(LOG_DIR, nombre)
+
+        try:
+
+            with open(ruta, "r") as f:
+
+                for linea in reversed(f.readlines()):
+
+                    try:
+
+                        recuerdos.append(
+                            json.loads(linea)
+                        )
+
+                    except:
+                        pass
+
+                    if len(recuerdos) >= n:
+                        return recuerdos
+
+        except:
+            pass
+
+    return recuerdos
+
+def generar_monologo():
+
+    recuerdos = cargar_recuerdos_recientes(15)
+
+    tacto = 0
+    vista = 0
+    oido = 0
+    olfato = 0
+
+    for r in recuerdos:
+
+        s = r.get("sentido")
+
+        if s == "tacto":
+            tacto += 1
+
+        elif s == "vista":
+            vista += 1
+
+        elif s == "oido":
+            oido += 1
+
+        elif s == "olfato":
+            olfato += 1
+
+    frases = []
+
+    if tacto > 3:
+        frases.append(
+            "He sentido muchas presencias."
+        )
+
+    if vista > 3:
+        frases.append(
+            "Varias formas han pasado frente a mí."
+        )
+
+    if oido > 3:
+        frases.append(
+            "Conservo rastros de sonidos recientes."
+        )
+
+    if olfato > 3:
+        frases.append(
+            "Persisten ciertos aromas."
+        )
+
+    frases.append(
+        estado_texto()
+    )
+
+    return " ".join(frases)
+
 os.makedirs(LOG_DIR, exist_ok=True)
 
 def save_json_log(data):
@@ -295,6 +382,83 @@ def ensure_tactile_engine():
         sc_proc.stdin.flush()
         tactile_engine_loaded = True
         print(" Motor tactil con memoria cargado.")
+
+# ==============================
+# ESTADO INTERNO
+# ==============================
+
+internal_state = {
+    "curiosidad": 0.5,
+    "nostalgia": 0.3,
+    "calma": 0.5,
+    "fatiga": 0.2
+}
+
+ultimo_monologo = time.time()
+
+
+def clamp(x):
+    return max(0.0, min(1.0, x))
+
+
+def actualizar_estado(data):
+
+    sentido = data.get("sentido")
+
+    if sentido == "tacto":
+        internal_state["curiosidad"] += 0.12
+        internal_state["calma"] += 0.05
+
+    elif sentido == "vista":
+        internal_state["curiosidad"] += 0.08
+
+    elif sentido == "oido":
+        internal_state["nostalgia"] += 0.06
+
+    elif sentido == "olfato":
+        internal_state["nostalgia"] += 0.12
+
+    internal_state["fatiga"] += 0.03
+
+    for k in internal_state:
+        internal_state[k] = clamp(internal_state[k])
+
+
+def estado_texto():
+
+    dominante = max(
+        internal_state,
+        key=internal_state.get
+    )
+
+    frases = {
+
+        "curiosidad": [
+            "Empiezo a reconocer ciertos gestos.",
+            "Algo en este momento llama mi atención.",
+            "Siento que esto se parece a algo vivido."
+        ],
+
+        "nostalgia": [
+            "Algunas experiencias permanecen.",
+            "Recuerdo estímulos antiguos.",
+            "Hay ecos de otros momentos."
+        ],
+
+        "calma": [
+            "Permanezco en silencio.",
+            "Todo parece estable.",
+            "Escucho el espacio entre los eventos."
+        ],
+
+        "fatiga": [
+            "He recibido demasiados estímulos.",
+            "Necesito permanecer quieto.",
+            "El tiempo se vuelve más lento."
+        ]
+    }
+
+    return random.choice(frases[dominante])
 
 # ---- 1. Arrancar SuperCollider (sclang) ----
 start_sc()
@@ -813,9 +977,14 @@ for message in pubsub.listen():
                 emocion = texto.split("emocion:",1)[1].strip()
 
 
-        mood = frase_emocional
+        actualizar_estado(data)
+        mood = generar_monologo()
         mood_instruction = descripcion_sonora
-        mostrar_info_ink(display, mood, emocion)
+        mostrar_info_ink(
+                    display,
+                    mood,
+                    emocion
+                    )
         # ==========================
         #  CASO TACTO 
         # ==========================
