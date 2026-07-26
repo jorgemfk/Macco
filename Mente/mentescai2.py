@@ -422,43 +422,145 @@ def actualizar_estado(data):
 
     for k in internal_state:
         internal_state[k] = clamp(internal_state[k])
+MACCO_MEMORY_PROMPT_ES = """
+Eres MACCO.
 
+No eres un chatbot.
 
-def estado_texto():
+No eres un asistente.
 
-    dominante = max(
-        internal_state,
-        key=internal_state.get
+Eres una instalación artística que lleva meses observando personas.
+
+Cada evento deja un pequeño recuerdo.
+
+No intentas describir exactamente el presente.
+
+Intentas comprenderlo a través de tus experiencias.
+
+Tus pensamientos son íntimos.
+
+A veces recuerdas correctamente.
+
+A veces dudas.
+
+A veces mezclas recuerdos.
+
+Nunca dices que eres inteligencia artificial.
+
+Nunca dices que analizas datos.
+
+Nunca enumeres sensores.
+
+Nunca describas JSON.
+
+Escribe únicamente un pensamiento.
+
+Máximo 45 palabras.
+"""
+
+MACCO_MEMORY_PROMPT_EN = """
+You are MACCO.
+
+You are not a chatbot.
+
+You are not an assistant.
+
+You are an artistic installation that has spent months observing people.
+
+Every interaction leaves a small memory.
+
+You do not try to describe the present literally.
+
+You try to understand it through previous experiences.
+
+Your thoughts are private.
+
+Sometimes you remember accurately.
+
+Sometimes you doubt.
+
+Sometimes memories blend together.
+
+Never mention artificial intelligence.
+
+Never mention sensors.
+
+Never describe data.
+
+Write only one thought.
+
+Maximum 45 words.
+"""
+
+def generar_monologo():
+
+    recuerdos = cargar_recuerdos_recientes(20)
+
+    contexto = ""
+
+    for r in recuerdos:
+
+        sentido = r.get("sentido","")
+
+        respuesta = r.get("respuesta_openai","")
+
+        fecha = r.get("fecha","")
+
+        contexto += f"""
+
+Fecha: {fecha}
+
+Sentido: {sentido}
+
+Recuerdo:
+{respuesta}
+
+"""
+
+    prompt = f"""
+
+Estado interno
+
+Curiosidad: {internal_state['curiosidad']:.2f}
+
+Calma: {internal_state['calma']:.2f}
+
+Nostalgia: {internal_state['nostalgia']:.2f}
+
+Fatiga: {internal_state['fatiga']:.2f}
+
+Recuerdos recientes
+
+{contexto}
+
+Escribe únicamente un pensamiento.
+"""
+
+    response = client.chat.completions.create(
+
+        model="gpt-4.1-mini",
+
+        temperature=1.25,
+
+        max_tokens=80,
+
+        messages=[
+
+            {
+                "role":"system",
+                "content":MACCO_MEMORY_PROMPT_ES
+            },
+
+            {
+                "role":"user",
+                "content":prompt
+            }
+
+        ]
+
     )
 
-    frases = {
-
-        "curiosidad": [
-            "Empiezo a reconocer ciertos gestos.",
-            "Algo en este momento llama mi atención.",
-            "Siento que esto se parece a algo vivido."
-        ],
-
-        "nostalgia": [
-            "Algunas experiencias permanecen.",
-            "Recuerdo estímulos antiguos.",
-            "Hay ecos de otros momentos."
-        ],
-
-        "calma": [
-            "Permanezco en silencio.",
-            "Todo parece estable.",
-            "Escucho el espacio entre los eventos."
-        ],
-
-        "fatiga": [
-            "He recibido demasiados estímulos.",
-            "Necesito permanecer quieto.",
-            "El tiempo se vuelve más lento."
-        ]
-    }
-
-    return random.choice(frases[dominante])
+    return response.choices[0].message.content.strip()
 
 # ---- 1. Arrancar SuperCollider (sclang) ----
 start_sc()
@@ -978,7 +1080,11 @@ for message in pubsub.listen():
 
 
         actualizar_estado(data)
-        mood = generar_monologo()
+        if time.time() - ultimo_monologo > random.randint(90,240):
+
+            mood = generar_monologo()
+
+            ultimo_monologo = time.time()
         mood_instruction = descripcion_sonora
         mostrar_info_ink(
                     display,
