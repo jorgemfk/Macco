@@ -128,58 +128,6 @@ def cargar_recuerdos_recientes(n=20):
 
     return recuerdos
 
-def generar_monologo():
-
-    recuerdos = cargar_recuerdos_recientes(15)
-
-    tacto = 0
-    vista = 0
-    oido = 0
-    olfato = 0
-
-    for r in recuerdos:
-
-        s = r.get("sentido")
-
-        if s == "tacto":
-            tacto += 1
-
-        elif s == "vista":
-            vista += 1
-
-        elif s == "oido":
-            oido += 1
-
-        elif s == "olfato":
-            olfato += 1
-
-    frases = []
-
-    if tacto > 3:
-        frases.append(
-            "He sentido muchas presencias."
-        )
-
-    if vista > 3:
-        frases.append(
-            "Varias formas han pasado frente a mí."
-        )
-
-    if oido > 3:
-        frases.append(
-            "Conservo rastros de sonidos recientes."
-        )
-
-    if olfato > 3:
-        frases.append(
-            "Persisten ciertos aromas."
-        )
-
-    frases.append(
-        estado_texto()
-    )
-
-    return " ".join(frases)
 
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -455,7 +403,7 @@ Nunca describas JSON.
 
 Escribe únicamente un pensamiento.
 
-Máximo 45 palabras.
+Máximo 45 palabras y seguido su traduccion al ingles entre parentesis ejemplo: estoy feliz (Im happy).
 """
 
 MACCO_MEMORY_PROMPT_EN = """
@@ -1080,11 +1028,17 @@ for message in pubsub.listen():
 
 
         actualizar_estado(data)
-        if time.time() - ultimo_monologo > random.randint(90,240):
+        mood = generar_monologo()
+        save_json_log({
 
-            mood = generar_monologo()
+    "sentido":"pensamiento",
 
-            ultimo_monologo = time.time()
+    "fecha":datetime.now().isoformat(),
+
+    "pensamiento":mood
+
+        })
+        #ultimo_monologo = time.time()
         mood_instruction = descripcion_sonora
         mostrar_info_ink(
                     display,
