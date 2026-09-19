@@ -48,10 +48,13 @@ const char* serverUrl = "http://192.168.0.82:5823/olfato";
 // ====== MQ135 CONFIG ====
 // =======================
 const int MQ135_PIN = 39;
-const int NUM_LECTURAS_MQ135 = 100;
+const int NUM_LECTURAS_MQ135 = 50;
 const float RLOAD = 10.0;
 float R0_135 = 1.0;
-const int UMBRAL_DELTA = 80;
+const int UMBRAL_DELTA = 70;
+float baseline135 = 0;
+bool baselineInicializada = false;
+const int UMBRAL_REACCION = 100;
 
 int raw135_prev = 0;
 
@@ -392,10 +395,21 @@ void loop() {
   long suma135 = 0;
   for (int i = 0; i < NUM_LECTURAS_MQ135; i++) {
     suma135 += analogRead(MQ135_PIN);
-    delay(5);
+    delay(2);
   }
 
   int raw135 = suma135 / NUM_LECTURAS_MQ135;
+    // Inicializar línea base
+  if (!baselineInicializada) {
+      baseline135 = raw135;
+      baselineInicializada = true;
+  }
+
+  // Cambio respecto al ambiente
+  float cambioRapido = raw135 - baseline135;
+
+  // Actualizar lentamente la línea base
+  baseline135 = baseline135 * 0.995 + raw135 * 0.005;
   float rs = calcularRS(raw135);
   float ratio = rs / R0_135;
   float mg135 = mg135_from_ratio(ratio);
@@ -403,21 +417,33 @@ void loop() {
   int delta = raw135 - raw135_prev;
   raw135_prev = raw135;
 
-  String nivelCont;
-  int estadoServo = 0;
+String nivelCont;
 
-  if (abs(delta) > UMBRAL_DELTA) {
-    if (delta > 0) {
-      nivelCont = "Rapido +";
-      estadoServo = 1;
+int estadoServo = 0;
+
+if (abs(cambioRapido) > UMBRAL_REACCION) {
+
+    if (cambioRapido > 0) {
+
+        nivelCont = "Rapido +";
+
+        estadoServo = 1;
+
     } else {
-      nivelCont = "Rapido -";
-      estadoServo = 2;
+
+        nivelCont = "Rapido -";
+
+        estadoServo = 2;
+
     }
-  } else {
+
+} else {
+
     nivelCont = "Estable";
+
     estadoServo = 0;
-  }
+
+}
 
   // ---------------- ACTIVAR MOVIMIENTO ----------------
   // Solo dispara si detecta evento y no está ya corriendo
@@ -503,5 +529,5 @@ void loop() {
 
   u8g2.sendBuffer();
 
-  delay(80);
+  delay(10);
 }
