@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+<title>MACCO — Antología</title>
+
+<style>
+:root {
+    --bg: #000;
+    --fg: #f2f2f2;
+    --dim: rgba(255,255,255,.18);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+#stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000;
+}
+
+canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#phraseLayer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7vw;
+    pointer-events: none;
+    z-index: 3;
+}
+
+#phrase {
+    max-width: 88vw;
+    text-align: center;
+
+    font-size: clamp(42px, 6vw, 112px);
+    line-height: 1.08;
+    font-weight: 300;
+    letter-spacing: .015em;
+
+    opacity: 0;
+    transform: translateY(18px) scale(.97);
+    filter: blur(14px);
+
+    transition:
+        opacity 2.4s ease,
+        transform 3.2s cubic-bezier(.2,.8,.2,1),
+        filter 2.8s ease;
+}
+
+#phrase.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+}
+
+#meta {
+    position: absolute;
+    z-index: 5;
+
+    left: 28px;
+    bottom: 24px;
+
+    font-family: monospace;
+    font-size: 12px;
+    letter-spacing: .25em;
+    text-transform: uppercase;
+
+    opacity: .22;
+
+    transition: opacity 1s ease;
+}
+
+#status {
+    position: absolute;
+    z-index: 5;
+
+    right: 25px;
+    top: 22px;
+
+    width: 8px;
+    height: 8px;
+
+    border-radius: 50%;
+    background: #333;
+
+    transition:
+        background .5s ease,
+        box-shadow .5s ease;
+}
+
+#status.connected {
+    background: #fff;
+    box-shadow: 0 0 18px rgba(255,255,255,.8);
+}
+
+#hint {
+    position: absolute;
+    z-index: 6;
+
+    inset: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-family: monospace;
+    font-size: 18px;
+    opacity: .45;
+}
+
+.hidden {
+    display: none !important;
+}
+
+
+/* ==========================================================
+   COMPORTAMIENTO POR EMOCIÓN
+========================================================== */
+
+.emotion-tristeza #phrase {
+    animation: breathe 7s ease-in-out infinite;
+}
+
+.emotion-nostalgia #phrase {
+    animation: drift 8s ease-in-out infinite;
+}
+
+.emotion-miedo #phrase {
+    animation: fear 1.8s ease-in-out infinite;
+}
+
+.emotion-deseo #phrase {
+    animation: desire 5s ease-in-out infinite;
+}
+
+.emotion-ansiedad #phrase {
+    animation: anxious .16s linear infinite;
+}
+
+.emotion-curiosidad #phrase {
+    animation: curious 4.5s ease-in-out infinite;
+}
+
+.emotion-fascinacion #phrase {
+    animation: fascination 6s ease-in-out infinite;
+}
+
+.emotion-rechazo #phrase {
+    animation: reject 3s ease-in-out infinite;
+}
+
+.emotion-ternura #phrase {
+    animation: tender 6s ease-in-out infinite;
+}
+
+.emotion-verguenza #phrase {
+    animation: shy 5s ease-in-out infinite;
+}
+
+.emotion-soledad #phrase {
+    animation: lonely 9s ease-in-out infinite;
+}
+
+.emotion-alivio #phrase {
+    animation: relief 7s ease-in-out infinite;
+}
+
+.emotion-inquietud #phrase {
+    animation: inquiet 2.2s ease-in-out infinite;
+}
+
+.emotion-asombro #phrase {
+    animation: wonder 5s ease-in-out infinite;
+}
+
+.emotion-calma #phrase {
+    animation: calm 10s ease-in-out infinite;
+}
+
+.emotion-esperanza #phrase {
+    animation: hope 8s ease-in-out infinite;
+}
+
+
+/* ==========================================================
+   ANIMACIONES
+========================================================== */
+
+@keyframes breathe {
+    0%,100% { transform: scale(.985); opacity: .72; }
+    50%     { transform: scale(1.015); opacity: 1; }
+}
+
+@keyframes drift {
+    0%,100% { transform: translate(-4px, 3px) scale(.995); }
+    50%     { transform: translate(5px, -7px) scale(1.012); }
+}
+
+@keyframes fear {
+    0%,100% { transform: scale(1); }
+    38%     { transform: scale(1.035) translateX(-2px); }
+    55%     { transform: scale(.985) translateX(3px); }
+}
+
+@keyframes desire {
+    0%,100% { transform: scale(.97); letter-spacing: .015em; }
+    50%     { transform: scale(1.035); letter-spacing: .055em; }
+}
+
+@keyframes anxious {
+    0%   { transform: translateX(0); }
+    25%  { transform: translateX(-2px); }
+    50%  { transform: translateX(3px); }
+    75%  { transform: translateX(-3px); }
+    100% { transform: translateX(0); }
+}
+
+@keyframes curious {
+    0%,100% { transform: rotate(0deg) scale(.985); }
+    50%     { transform: rotate(.3deg) scale(1.025); }
+}
+
+@keyframes fascination {
+    0%,100% { filter: blur(0); transform: scale(.99); }
+    50%     { filter: blur(.5px); transform: scale(1.035); }
+}
+
+@keyframes reject {
+    0%,100% { transform: translateX(0) rotate(0); }
+    20%     { transform: translateX(-6px) rotate(-.2deg); }
+    50%     { transform: translateX(5px) rotate(.2deg); }
+}
+
+@keyframes tender {
+    0%,100% { transform: scale(.99); opacity: .82; }
+    50%     { transform: scale(1.025); opacity: 1; }
+}
+
+@keyframes shy {
+    0%,100% { transform: translateY(3px) scale(.985); opacity: .65; }
+    50%     { transform: translateY(-2px) scale(1); opacity: .95; }
+}
+
+@keyframes lonely {
+    0%,100% { transform: translateX(-5px); opacity: .62; }
+    50%     { transform: translateX(8px); opacity: .95; }
+}
+
+@keyframes relief {
+    0%   { transform: scale(.97); opacity: .65; }
+    40%  { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); opacity: .9; }
+}
+
+@keyframes inquiet {
+    0%,100% { transform: translateY(0); }
+    35%     { transform: translateY(-4px); }
+    65%     { transform: translateY(3px); }
+}
+
+@keyframes wonder {
+    0%,100% { transform: scale(.98); opacity: .7; }
+    45%     { transform: scale(1.055); opacity: 1; }
+}
+
+@keyframes calm {
+    0%,100% { transform: scale(.99); opacity: .84; }
+    50%     { transform: scale(1.012); opacity: 1; }
+}
+
+@keyframes hope {
+    0%,100% { transform: translateY(4px) scale(.985); opacity: .72; }
+    50%     { transform: translateY(-5px) scale(1.018); opacity: 1; }
+}
+</style>
+</head>
+
+<body>
+
+<div id="stage">
+
+    <canvas id="ascii"></canvas>
+
+    <div id="phraseLayer">
+        <div id="phrase"></div>
+    </div>
+
+    <div id="meta">MACCO · ANTOLOGÍA</div>
+
+    <div id="status"></div>
+
+    <div id="hint">
+        conectando...
+    </div>
+
+</div>
+
+
+<script>
+/*
+ * MACCO — Antología visual
+ *
+ * La esfera ASCII se basa en la lógica de la animación proporcionada:
+ * superficie esférica + deformación + iluminación + caracteres ASCII.
+ *
+ * Aquí la animación cambia según el sentimiento recibido.
+ */
+
+const canvas = document.getElementById("ascii");
+const ctx = canvas.getContext("2d");
+
+const phrase = document.getElementById("phrase");
+const meta = document.getElementById("meta");
+const statusDot = document.getElementById("status");
+const hint = document.getElementById("hint");
+
+const BASE_CHARS = " .:-=+*#%@";
+
+let fontSize = 14;
+let cols = 0;
+let rows = 0;
+let dpr = 1;
+
+let mode = "interlude";
+let currentEmotion = "Neutral";
+let transitionToken = 0;
+
+
+/* ==========================================================
+   CONFIGURACIÓN VISUAL POR EMOCIÓN
+========================================================== */
+
+const EMOTION_STYLE = {
+    "Tristeza": {
+        speed: .45,
+        wave: 1.0,
+        pulse: 1.0,
+        light: [.2, .65, 1.7],
+        scale: .43
+    },
+
+    "Nostalgia": {
+        speed: .25,
+        wave: .65,
+        pulse: .65,
+        light: [-.8, .7, 1.2],
+        scale: .46
+    },
+
+    "Miedo": {
+        speed: 2.2,
+        wave: 2.4,
+        pulse: 2.0,
+        light: [1.2, .2, .6],
+        scale: .42
+    },
+
+    "Deseo": {
+        speed: .8,
+        wave: 1.5,
+        pulse: 1.8,
+        light: [1.0, .85, 1.0],
+        scale: .48
+    },
+
+    "Ansiedad": {
+        speed: 3.2,
+        wave: 3.5,
+        pulse: 2.8,
+        light: [-1.5, .5, .8],
+        scale: .40
+    },
+
+    "Curiosidad": {
+        speed: 1.25,
+        wave: 1.7,
+        pulse: 1.2,
+        light: [.7, 1.2, 1.4],
+        scale: .47
+    },
+
+    "Fascinación": {
+        speed: .55,
+        wave: 1.9,
+        pulse: 1.7,
+        light: [1.0, 1.0, 1.7],
+        scale: .50
+    },
+
+    "Rechazo": {
+        speed: 1.7,
+        wave: 2.8,
+        pulse: 2.4,
+        light: [-1.2, .2, .8],
+        scale: .43
+    },
+
+    "Ternura": {
+        speed: .35,
+        wave: .8,
+        pulse: .6,
+        light: [.4, 1.0, 1.8],
+        scale: .45
+    },
+
+    "Vergüenza": {
+        speed: .65,
+        wave: 1.2,
+        pulse: .8,
+        light: [-.5, .8, 1.0],
+        scale: .42
+    },
+
+    "Soledad": {
+        speed: .18,
+        wave: .45,
+        pulse: .35,
+        light: [-1.4, .35, 1.0],
+        scale: .38
+    },
+
+    "Alivio": {
+        speed: .3,
+        wave: .75,
+        pulse: .8,
+        light: [.8, 1.1, 1.8],
+        scale: .47
+    },
+
+    "Inquietud": {
+        speed: 1.8,
+        wave: 2.2,
+        pulse: 1.8,
+        light: [1.3, .4, .7],
+        scale: .44
+    },
+
+    "Asombro": {
+        speed: .9,
+        wave: 1.3,
+        pulse: 1.5,
+        light: [1.2, 1.0, 1.8],
+        scale: .52
+    },
+
+    "Calma": {
+        speed: .12,
+        wave: .3,
+        pulse: .25,
+        light: [.3, 1.0, 1.8],
+        scale: .45
+    },
+
+    "Esperanza": {
+        speed: .22,
+        wave: .65,
+        pulse: .75,
+        light: [.5, 1.3, 1.8],
+        scale: .48
+    },
+
+    "Neutral": {
+        speed: .55,
+        wave: 1.0,
+        pulse: 1.0,
+        light: [.5, .85, 1.5],
+        scale: .46
+    }
+};
+
+
+function getStyle(emotion) {
+    return EMOTION_STYLE[emotion] || EMOTION_STYLE["Neutral"];
+}
+
+
+function resize() {
+
+    dpr = Math.min(
+        window.devicePixelRatio || 1,
+        2
+    );
+
+    canvas.width =
+        Math.floor(innerWidth * dpr);
+
+    canvas.height =
+        Math.floor(innerHeight * dpr);
+
+    canvas.style.width =
+        innerWidth + "px";
+
+    canvas.style.height =
+        innerHeight + "px";
+
+    ctx.setTransform(
+        dpr, 0, 0, dpr, 0, 0
+    );
+
+    /*
+     * La fuente monoespaciada es más ancha que alta.
+     * Ajustamos para que la esfera conserve proporciones.
+     */
+    fontSize = Math.max(
+        9,
+        Math.min(
+            18,
+            innerWidth / 90
+        )
+    );
+
+    ctx.font =
+        `${fontSize}px monospace`;
+
+    cols = Math.floor(
+        innerWidth /
+        (fontSize * .62)
+    );
+
+    rows = Math.floor(
+        innerHeight /
+        fontSize
+    );
+}
+
+window.addEventListener(
+    "resize",
+    resize
+);
+
+resize();
+
+
+function gray2ASCII(v) {
+
+    v = Math.max(
+        0,
+        Math.min(1, v)
+    );
+
+    const index =
+        Math.floor(
+            v * (BASE_CHARS.length - 1)
+        );
+
+    return BASE_CHARS[index];
+}
+
+
+function render(time) {
+
+    const t = time / 1000;
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(
+        0,
+        0,
+        innerWidth,
+        innerHeight
+    );
+
+    if (mode !== "interlude") {
+        requestAnimationFrame(render);
+        return;
+    }
+
+    ctx.font =
+        `${fontSize}px monospace`;
+
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#f2f2f2";
+
+    const style =
+        getStyle(currentEmotion);
+
+    const sqrt2 = Math.sqrt(2);
+
+    /*
+     * La velocidad, deformación y luz cambian con
+     * el sentimiento.
+     */
+    const dx =
+        Math.cos(
+            t * style.speed
+        ) * sqrt2;
+
+    const dz =
+        Math.sin(
+            t * style.speed
+        ) * sqrt2;
+
+    const wavePhase =
+        Math.PI *
+        2 *
+        t *
+        style.wave;
+
+    const lx =
+        style.light[0];
+
+    const ly =
+        style.light[1];
+
+    const lz =
+        style.light[2];
+
+    const lightLen =
+        Math.hypot(
+            lx,
+            ly,
+            lz
+        );
+
+    const light = [
+        lx / lightLen,
+        ly / lightLen,
+        lz / lightLen
+    ];
+
+    const ambient = .035;
+
+    const sphereSize =
+        Math.min(
+            cols,
+            rows * 2
+        ) * style.scale;
+
+    for (
+        let j = 0;
+        j < rows;
+        j++
+    ) {
+
+        let line = "";
+
+        for (
+            let i = 0;
+            i < cols;
+            i++
+        ) {
+
+            let x =
+                (i - cols / 2) /
+                sphereSize;
+
+            let y =
+                (j - rows / 2) /
+                sphereSize;
+
+            const wave =
+                Math.sin(
+                    wavePhase + y * 1.5
+                );
+
+            const pulse =
+                Math.pow(
+                    .5 +
+                    .5 * wave,
+                    4
+                ) *
+                style.pulse;
+
+            x *=
+                1 -
+                .14 *
+                pulse;
+
+            x *= 1.3;
+
+            y *=
+                1 -
+                .07 *
+                pulse;
+
+            y =
+                y * 1.5 +
+                .15;
+
+            const inner =
+                Math.max(
+                    0,
+                    1 -
+                    Math.abs(x)
+                );
+
+            y =
+                y -
+                Math.abs(x) *
+                Math.sqrt(inner);
+
+            const z2 =
+                1 -
+                x * x -
+                y * y;
+
+            if (z2 > 0) {
+
+                const z =
+                    Math.sqrt(z2);
+
+                let dirX = dx;
+                let dirY = 1;
+                let dirZ = dz;
+
+                const dirLen =
+                    Math.hypot(
+                        dirX,
+                        dirY,
+                        dirZ
+                    );
+
+                dirX /= dirLen;
+                dirY /= dirLen;
+                dirZ /= dirLen;
+
+                let intensity =
+                    .5 *
+                    Math.max(
+                        0,
+                        x * dirX +
+                        y * dirY +
+                        z * dirZ
+                    );
+
+                /*
+                 * Pequeña modulación para que la esfera
+                 * nunca se sienta completamente estática.
+                 */
+                intensity +=
+                    .04 *
+                    Math.sin(
+                        t * style.speed * 2 +
+                        x * 8
+                    );
+
+                const brightness =
+                    Math.min(
+                        1,
+                        Math.max(
+                            0,
+                            intensity +
+                            ambient
+                        )
+                    );
+
+                line +=
+                    gray2ASCII(
+                        brightness
+                    );
+
+            } else {
+
+                line += " ";
+
+            }
+        }
+
+        ctx.fillText(
+            line,
+            0,
+            j * fontSize
+        );
+    }
+
+    requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+
+
+/* ==========================================================
+   FRASES
+========================================================== */
+
+function normalizeEmotion(text) {
+
+    return String(text)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(
+            /[\u0300-\u036f]/g,
+            ""
+        );
+}
+
+
+function setEmotionClass(emotion) {
+
+    const normalized =
+        normalizeEmotion(emotion);
+
+    document.body.className =
+        "emotion-" +
+        normalized;
+}
+
+
+function showPhrase(data) {
+
+    mode = "phrase";
+    currentEmotion =
+        data.sentimiento ||
+        data.emotion ||
+        "Neutral";
+
+    setEmotionClass(
+        currentEmotion
+    );
+
+    /*
+     * Primero desaparecer.
+     */
+    phrase.classList.remove(
+        "visible"
+    );
+
+    setTimeout(() => {
+
+        phrase.textContent =
+            data.frase ||
+            data.text ||
+            "";
+
+        meta.textContent =
+            `MACCO · ${data.fecha || ""} · ${currentEmotion}`;
+
+        phrase.classList.add(
+            "visible"
+        );
+
+    }, 500);
+}
+
+
+function showInterlude(data) {
+
+    mode = "interlude";
+
+    currentEmotion =
+        data.emotion ||
+        data.sentimiento ||
+        currentEmotion ||
+        "Neutral";
+
+    setEmotionClass(
+        currentEmotion
+    );
+
+    phrase.classList.remove(
+        "visible"
+    );
+
+    meta.textContent =
+        "MACCO · ANTOLOGÍA";
+}
+
+
+/* ==========================================================
+   WEBSOCKET NATIVO
+========================================================== */
+
+let ws = null;
+let reconnectTimer = null;
+
+
+function connect() {
+
+    const protocol =
+        location.protocol === "https:"
+            ? "wss:"
+            : "ws:";
+
+    ws = new WebSocket(
+        `${protocol}//${location.host}/ws`
+    );
+
+
+    ws.onopen = () => {
+
+        console.log(
+            "MACCO WebSocket conectado"
+        );
+
+        statusDot.classList.add(
+            "connected"
+        );
+
+        hint.classList.add(
+            "hidden"
+        );
+
+        ws.send("ping");
+    };
+
+
+    ws.onmessage = event => {
+
+        if (event.data === "pong") {
+            return;
+        }
+
+        try {
+
+            const data =
+                JSON.parse(
+                    event.data
+                );
+
+            console.log(
+                "MACCO:",
+                data
+            );
+
+            if (
+                data.type ===
+                "phrase"
+            ) {
+
+                showPhrase(data);
+
+            } else if (
+                data.type ===
+                "interlude"
+            ) {
+
+                showInterlude(data);
+
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Mensaje inválido:",
+                error
+            );
+        }
+    };
+
+
+    ws.onclose = () => {
+
+        statusDot.classList.remove(
+            "connected"
+        );
+
+        hint.textContent =
+            "reconectando...";
+
+        hint.classList.remove(
+            "hidden"
+        );
+
+        clearTimeout(
+            reconnectTimer
+        );
+
+        reconnectTimer =
+            setTimeout(
+                connect,
+                2000
+            );
+    };
+
+
+    ws.onerror = error => {
+
+        console.error(
+            "WebSocket:",
+            error
+        );
+
+    };
+}
+
+
+connect();
+
+</script>
+
+</body>
+</html>
