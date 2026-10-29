@@ -24,6 +24,7 @@ class Vista:
 
         # --- Guardar última emoción publicada para evitar repeticiones ---
         self.ultima_emocion_publicada = None
+        self.ultima_localizacion_publicada = None
 
         # --- Definir ruta principal ---
         self.app.add_url_rule("/emociones", "emociones", self.handle_emociones, methods=["POST"])
@@ -151,13 +152,18 @@ class Vista:
                 return e
         return "Neutral"
 
-    def _publish_to_redis(self, record, respuesta, totals):
-        """Publica en Redis solo si hay una emoción nueva."""
+    def _publish_to_redis(self, record, respuesta, totals, localizacion):
+    """Publica emociones y localización en Redis."""
+
         emocion_actual = self._extract_emocion(respuesta)
 
-        if emocion_actual == self.ultima_emocion_publicada:
-            print(f" Misma emoción detectada ({emocion_actual}), no se publica en Redis.")
-            return  # Evita publicaciones repetidas
+        # Evitar publicar si no cambian ni la emoción ni la posición
+        if (
+            emocion_actual == self.ultima_emocion_publicada
+            and localizacion == self.ultima_localizacion_publicada
+        ):
+            print("Sin cambios de emoción ni localización.")
+            return
 
         data = {
             "sentido": "vista",
@@ -166,12 +172,24 @@ class Vista:
             "emociones_diarias": record["emociones"],
             "emociones_recientes": totals,
             "respuesta_openai": respuesta,
-            "emocion_predominante": emocion_actual
+            "emocion_predominante": emocion_actual,
+            "localizacion": localizacion
         }
 
-        self.r.publish("emociones", json.dumps(data, ensure_ascii=False))
+        json_data = json.dumps(data, ensure_ascii=False)
+
+        # Publicar para los procesos suscritos al canal
+        self.r.publish("emociones", json_data)
+
+        # Conservar el último estado para poder consultarlo después
+        self.r.set("vista:ultima", json_data)
+
         self.ultima_emocion_publicada = emocion_actual
-        print(f" Publicado en Redis con emoción: {emocion_actual}")
+        self.ultima_localizacion_publicada = copy.deepcopy(localizacion)
+
+        print("Publicado en Redis:", json_data)
+    
+
 
     # ------------------------------------------------------------
     # Servicio Flask
@@ -182,6 +200,31 @@ class Vista:
         try:
             data = request.get_json()
             emocion_data = data.get("emociones", {})
+
+            data = request.get_json()
+
+            if not isinstance(data, dict):
+                return jsonify({"error": "Se esperaba un objeto JSON"}), 400
+
+            emocion_data = data.get("emociones", {})
+            localizacion = data.get("localizacion")
+
+            if not isinstance(emocion_data, dict):
+                return jsonify({"error": "emociones debe ser un objeto"}), 400
+
+            if localizacion is not None:
+                try:
+                    x = max(0, min(100, int(localizacion["x"])))
+                    y = max(0, min(100, int(localizacion["y"])))
+
+                    localizacion = {
+                        "x": x,
+                        "y": y
+                    }
+                except (KeyError, TypeError, ValueError):
+                    return jsonify({"error": "localizacion debe incluir x e y entre 0 y 100"}), 400
+
+                        
 
             tiempo = self._get_time_since_last_request()
 
@@ -199,13 +242,19 @@ class Vista:
             analisis = self._sanitize_text(analisis)
 
             # Publicar en Redis si cambia la emoción
-            self._publish_to_redis(record, analisis, totales_recientes)
+            self._publish_to_redis(
+                                    record,
+                                    analisis,
+                                    totales_recientes,
+                                    localizacion
+                                )
 
             return jsonify({
                 "tiempo_desde_ultima_peticion_seg": tiempo,
                 "emociones_recibidas": emocion_data,
                 "emociones_ultimas_tres": totales_recientes,
                 "registro_actualizado": record,
+                "localizacion_recibida": localizacion,
                 "respuesta_openai": analisis
             })
 
