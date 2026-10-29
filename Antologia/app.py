@@ -21,7 +21,7 @@ PORT = int(os.getenv("MACCO_PORT", "8080"))
 # Modelo económico para generación de texto.
 # Se puede cambiar con:
 # export OPENAI_MODEL="gpt-5.6-luna"
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
 # Tiempo visible de cada frase y duración de la transición.
 PHRASE_SECONDS = float(os.getenv("MACCO_PHRASE_SECONDS", "12"))

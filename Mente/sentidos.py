@@ -153,7 +153,7 @@ class Vista:
         return "Neutral"
 
     def _publish_to_redis(self, record, respuesta, totals, localizacion):
-    """Publica emociones y localización en Redis."""
+        """Publica emociones y localización en Redis."""
 
         emocion_actual = self._extract_emocion(respuesta)
 
