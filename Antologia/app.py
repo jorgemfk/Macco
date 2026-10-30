@@ -18,8 +18,8 @@ from openai import OpenAI
 # CONFIGURACIÓN
 # ============================================================
 
-#LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/home/jorge/logMacco"))
-LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/Users/jorgeluis/logMacco"))
+LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/home/jorge/logMacco"))
+#LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/Users/jorgeluis/logMacco"))
 
 HOST = os.getenv("MACCO_HOST", "0.0.0.0")
 PORT = int(os.getenv("MACCO_PORT", "8080"))
