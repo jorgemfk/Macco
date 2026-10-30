@@ -3,7 +3,10 @@ import json
 import re
 import time
 import threading
-from datetime import datetime, date, timedelta
+import unicodedata
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from pathlib import Path
 
 from flask import Flask, render_template, jsonify
@@ -14,88 +17,130 @@ from openai import OpenAI
 # CONFIGURACIÓN
 # ============================================================
 
-LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/home/jorge/logMacco"))
+#LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/home/jorge/logMacco"))
+LOG_DIR = Path(os.getenv("MACCO_LOG_DIR", "/Users/jorgeluis/logMacco"))
+
 HOST = os.getenv("MACCO_HOST", "0.0.0.0")
 PORT = int(os.getenv("MACCO_PORT", "8080"))
 
-# Modelo económico para generación de texto.
-# Se puede cambiar con:
-# export OPENAI_MODEL="gpt-5.6-luna"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
-# Tiempo visible de cada frase y duración de la transición.
+# Segundos que dura el visual central antes de la frase de despedida.
+VISUAL_SECONDS = float(os.getenv("MACCO_VISUAL_SECONDS", "25"))
+# Segundos que permanece la frase de despedida.
 PHRASE_SECONDS = float(os.getenv("MACCO_PHRASE_SECONDS", "12"))
-INTERLUDE_SECONDS = float(os.getenv("MACCO_INTERLUDE_SECONDS", "5"))
+# Pausa (pantalla apagándose) antes de redibujar con el siguiente día.
+INTERLUDE_SECONDS = float(os.getenv("MACCO_INTERLUDE_SECONDS", "4"))
 
 app = Flask(__name__)
 sock = Sock(app)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=40.0, max_retries=1)
+executor = ThreadPoolExecutor(max_workers=2)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Clientes WebSocket conectados.
 clients = set()
 clients_lock = threading.Lock()
 
-# Estado público.
 state_lock = threading.Lock()
 state = {
-    "mode": "interlude",
-    "text": "",
-    "emotion": "Neutral",
-    "date": "",
+    "mode": "idle",        # idle | visual | phrase | interlude
+    "day": None,           # último payload "day"
+    "phrase": None,        # último payload "phrase" (solo mientras se muestra)
     "cycle": 0,
     "connected_clients": 0,
-    "source_thoughts": 0,
 }
 
+# Emociones de visión (las que se leen del log).
+LOG_EMOTIONS = ["Enojo", "Asco", "Miedo", "Felicidad", "Tristeza", "Sorpresa", "Neutral"]
+
+# Sentimientos permitidos para la frase de despedida.
 EMOTIONS = [
-    "Tristeza",
-    "Nostalgia",
-    "Miedo",
-    "Deseo",
-    "Ansiedad",
-    "Curiosidad",
-    "Fascinación",
-    "Rechazo",
-    "Ternura",
-    "Vergüenza",
-    "Soledad",
-    "Alivio",
-    "Inquietud",
-    "Asombro",
-    "Calma",
-    "Esperanza",
+    "Tristeza", "Nostalgia", "Miedo", "Deseo", "Ansiedad", "Curiosidad",
+    "Fascinación", "Rechazo", "Ternura", "Vergüenza", "Soledad", "Alivio",
+    "Inquietud", "Asombro", "Calma", "Esperanza",
 ]
 
+
+def norm(s):
+    """Minúsculas y sin acentos: 'Oído' -> 'oido'."""
+    s = unicodedata.normalize("NFD", str(s))
+    return s.encode("ascii", "ignore").decode().lower().strip()
+
+
+EMO_CANON = {norm(e): e for e in LOG_EMOTIONS}
+
 # ============================================================
-# LECTURA DE MEMORIA
+# LECTURA DE LOGS
 # ============================================================
 
 def parse_log_date(path: Path):
-    """
-    Espera archivos YYYY-MM-DD.log.
-    """
     match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})\.log", path.name)
     if not match:
         return None
-
     try:
         return date.fromisoformat(match.group(1))
     except ValueError:
         return None
 
 
-def read_thoughts_for_date(day: date):
-    """
-    Lee únicamente registros:
-        {"sentido":"pensamiento", "fecha":..., "pensamiento":...}
-    del archivo diario.
-    """
+def list_log_days():
+    """Días con archivo de log, del más antiguo al más reciente."""
+    if not LOG_DIR.exists():
+        return []
+    days = set()
+    for path in LOG_DIR.glob("*.log"):
+        d = parse_log_date(path)
+        if d is not None and d <= date.today():
+            days.add(d)
+    return sorted(days)
+
+
+def add_emotions(obj, counter):
+    """Acepta {"Enojo":1,"Asco":2}, ["Enojo","Miedo"] o combinaciones."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            canon = EMO_CANON.get(norm(k))
+            if canon is not None:
+                try:
+                    n = int(round(float(v)))
+                except (TypeError, ValueError):
+                    n = 1
+                if n > 0:
+                    counter[canon] += n
+            elif isinstance(v, (dict, list)):
+                add_emotions(v, counter)
+    elif isinstance(obj, list):
+        for el in obj:
+            add_emotions(el, counter)
+    elif isinstance(obj, str):
+        canon = EMO_CANON.get(norm(obj))
+        if canon:
+            counter[canon] += 1
+
+
+def parse_loc(obj):
+    """{"x":20,"y":50} (porcentaje) -> [20.0, 50.0] o None."""
+    try:
+        if isinstance(obj, dict):
+            x, y = float(obj["x"]), float(obj["y"])
+        elif isinstance(obj, (list, tuple)) and len(obj) >= 2:
+            x, y = float(obj[0]), float(obj[1])
+        else:
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    return [round(min(100.0, max(0.0, x)), 1), round(min(100.0, max(0.0, y)), 1)]
+
+
+def read_day(day: date):
+    """Lee el log de un día y devuelve todo lo que necesitan las 4 secciones."""
     path = LOG_DIR / f"{day.isoformat()}.log"
 
-    if not path.exists():
-        return []
-
+    entries = 0
+    counts = Counter()
+    words, seen = [], set()
+    emo = Counter()
+    emo_records = 0
+    locs = []
     thoughts = []
 
     try:
@@ -104,65 +149,80 @@ def read_thoughts_for_date(day: date):
                 line = line.strip()
                 if not line:
                     continue
-
                 try:
                     item = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-
-                if item.get("sentido") != "pensamiento":
+                if not isinstance(item, dict):
                     continue
 
-                thought = str(item.get("pensamiento", "")).strip()
+                entries += 1
+                sentido = norm(item.get("sentido", ""))
+                counts[sentido] += 1
 
-                if thought:
-                    thoughts.append({
-                        "fecha": item.get("fecha", day.isoformat()),
-                        "pensamiento": thought,
-                    })
+                if sentido == "oido":
+                    text = str(item.get("texto_original", "")).strip()
+                    key = text.lower()
+                    if text and key not in seen:
+                        seen.add(key)
+                        words.append(text[:40])
 
+                elif sentido == "vista":
+                    before = sum(emo.values())
+                    add_emotions(item.get("emociones_recientes"), emo)
+                    if sum(emo.values()) > before:
+                        emo_records += 1
+                    loc = parse_loc(item.get("localizacion"))
+                    if loc:
+                        locs.append(loc)
+
+                elif sentido == "pensamiento":
+                    t = str(item.get("pensamiento", "")).strip()
+                    if t:
+                        thoughts.append({
+                            "fecha": item.get("fecha", day.isoformat()),
+                            "pensamiento": t,
+                        })
     except OSError as exc:
         print(f"[LOG] No se pudo leer {path}: {exc}")
 
-    return thoughts
+    # Máximo 60 puntos de localización, conservando el orden cronológico.
+    if len(locs) > 60:
+        step = len(locs) / 60
+        locs = [locs[int(i * step)] for i in range(60)]
 
+    total = sum(emo.values())
+    emotions = [
+        {
+            "name": name,
+            "count": emo[name],
+            "pct": round(100 * emo[name] / total) if total else 0,
+        }
+        for name in LOG_EMOTIONS
+    ]
 
-def available_thought_dates():
-    """
-    Construye la antología desde HOY hacia atrás, hasta la fecha
-    más antigua que tenga al menos un pensamiento.
-
-    Los días sin pensamientos se omiten: no se inventa una fuente
-    histórica inexistente.
-    """
-    if not LOG_DIR.exists():
-        return []
-
-    days = []
-
-    for path in LOG_DIR.glob("*.log"):
-        d = parse_log_date(path)
-        if d is None:
-            continue
-
-        # No usamos fechas futuras.
-        if d > date.today():
-            continue
-
-        thoughts = read_thoughts_for_date(d)
-        if thoughts:
-            days.append(d)
-
-    return sorted(set(days), reverse=True)
-
-
-def latest_thought_date():
-    days = available_thought_dates()
-    return days[-1] if days else None
+    return {
+        "day": day.isoformat(),
+        "file": path.name,
+        "entries": entries,
+        "counts": {
+            "pensamiento": counts["pensamiento"],
+            "oido": counts["oido"],
+            "vista": counts["vista"],
+            "tacto": counts["tacto"],
+            "olfato": counts["olfato"],
+            "emociones": emo_records,
+        },
+        "words": words,
+        "emotions": emotions,
+        "locations": locs,          # vacío -> el navegador la inventa
+        "visual_seconds": VISUAL_SECONDS,
+        "_thoughts": thoughts,      # no se envía al navegador
+    }
 
 
 # ============================================================
-# OPENAI
+# OPENAI — FRASE DE DESPEDIDA
 # ============================================================
 
 SYSTEM_PROMPT = """
@@ -170,11 +230,11 @@ Eres la voz antológica de MACCO, una instalación artística que ha
 acumulado pensamientos durante meses.
 
 Recibes los pensamientos que MACCO produjo durante UN DÍA concreto.
+Ese día termina y MACCO se despide de él.
 
 Tu tarea NO es resumirlos literalmente.
-
-Debes transformarlos en una nueva pieza breve: una frase que parezca
-haber nacido de la memoria de ese día.
+Transfórmalos en una frase breve de despedida, como si naciera de la
+memoria de ese día.
 
 La frase debe ser:
 - íntima
@@ -184,7 +244,8 @@ La frase debe ser:
 - concreta
 - ligeramente ambigua
 - diferente de las frases anteriores
-- adecuada para ser proyectada en una sala de exposición
+- inesperada
+- en tono de despedida
 
 No digas que eres una IA.
 No menciones sensores, datos, archivos, modelos, programación ni JSON.
@@ -197,13 +258,10 @@ No uses fórmulas como:
 "cada persona deja una huella".
 
 Evita comenzar repetidamente con "Hoy", "Recuerdo", "A veces" o "No sé".
-
 No conviertas la frase en una explicación.
 
 Puede haber contradicción:
-deseo y rechazo,
-memoria y olvido,
-curiosidad y miedo,
+deseo y rechazo, memoria y olvido, curiosidad y miedo,
 cercanía y abandono.
 
 El sentimiento debe ser una sola palabra de la lista permitida.
@@ -220,45 +278,29 @@ Tristeza, Nostalgia, Miedo, Deseo, Ansiedad, Curiosidad,
 Fascinación, Rechazo, Ternura, Vergüenza, Soledad, Alivio,
 Inquietud, Asombro, Calma, Esperanza.
 
-Máximo 35 palabras para la frase.
+Máximo 35 palabras para la frase. y entre parentesis en ingles ejemplo:
+Adios, me siento solo. (goodbye, I feel alone.)
 """
 
 
 def extract_json(text):
-    """
-    Tolerancia ante modelos que devuelvan ```json ... ``` o texto extra.
-    """
     text = text.strip()
-
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
         text = re.sub(r"\s*```$", "", text)
-
-    start = text.find("{")
-    end = text.rfind("}")
-
+    start, end = text.find("{"), text.rfind("}")
     if start >= 0 and end > start:
         text = text[start:end + 1]
-
     return json.loads(text)
 
 
-def generate_anthology(thoughts, day, previous=None):
-    """
-    Genera una nueva frase incluso si se ejecuta varias veces sobre
-    el mismo día. Los pensamientos históricos son la materia prima;
-    la frase es siempre nueva.
-    """
-
-    source = "\n".join(
-        f"- {item['pensamiento']}"
-        for item in thoughts[-80:]
-    )
+def generate_farewell(thoughts, day, previous=None):
+    source = "\n".join(f"- {t['pensamiento']}" for t in thoughts[-80:])
 
     previous_text = ""
     if previous:
         previous_text = f"""
-Frase antológica inmediatamente anterior:
+Frase de despedida inmediatamente anterior:
 "{previous['frase']}"
 
 No la reformules ni repitas su idea.
@@ -272,27 +314,30 @@ Pensamientos originales de ese día:
 
 {previous_text}
 
-Crea una nueva frase antológica para ese día.
+Crea una nueva frase de despedida para ese día.
 No la copies. No la resumas.
 """
+
+    kwargs = {}
+    # Los modelos de razonamiento gastan tokens "pensando": hay que darles
+    # margen y pedir razonamiento mínimo, o la respuesta sale vacía.
+    if OPENAI_MODEL.startswith(("gpt-5", "o")):
+        kwargs["reasoning"] = {"effort": "minimal"}
 
     try:
         response = client.responses.create(
             model=OPENAI_MODEL,
             instructions=SYSTEM_PROMPT,
             input=user_prompt,
-            max_output_tokens=160,
+            max_output_tokens=800,
+            **kwargs,
         )
-
-        raw = response.output_text.strip()
-        data = extract_json(raw)
+        data = extract_json(response.output_text)
 
         frase = str(data.get("frase", "")).strip()
         sentimiento = str(data.get("sentimiento", "")).strip()
-
         if not frase:
             raise ValueError("OpenAI devolvió una frase vacía")
-
         if sentimiento not in EMOTIONS:
             sentimiento = "Neutral"
 
@@ -300,21 +345,15 @@ No la copies. No la resumas.
             "frase": frase,
             "sentimiento": sentimiento,
             "fecha": day.isoformat(),
-            "fuente_pensamientos": len(thoughts),
             "modelo": OPENAI_MODEL,
         }
 
     except Exception as exc:
         print(f"[OPENAI] Error: {type(exc).__name__}: {exc}")
-
-        # Fallback: no detiene la instalación si temporalmente falla la API.
-        fallback = thoughts[-1]["pensamiento"]
-
         return {
-            "frase": fallback,
+            "frase": thoughts[-1]["pensamiento"],
             "sentimiento": "Neutral",
             "fecha": day.isoformat(),
-            "fuente_pensamientos": len(thoughts),
             "modelo": "fallback",
         }
 
@@ -325,7 +364,6 @@ No la copies. No la resumas.
 
 def broadcast(payload):
     message = json.dumps(payload, ensure_ascii=False)
-
     dead = []
 
     with clients_lock:
@@ -334,10 +372,8 @@ def broadcast(payload):
                 ws.send(message)
             except Exception:
                 dead.append(ws)
-
         for ws in dead:
             clients.discard(ws)
-
         with state_lock:
             state["connected_clients"] = len(clients)
 
@@ -351,30 +387,31 @@ def websocket(ws):
 
     print("[WS] cliente conectado")
 
+    # Un navegador que se conecta a mitad de un día recibe lo que se muestra.
     try:
-        # Mantener la conexión abierta.
+        with state_lock:
+            day, phrase, mode = state["day"], state["phrase"], state["mode"]
+        if day and mode in ("visual", "phrase"):
+            ws.send(json.dumps(day, ensure_ascii=False))
+        if phrase and mode == "phrase":
+            ws.send(json.dumps(phrase, ensure_ascii=False))
+    except Exception:
+        pass
+
+    try:
         while True:
             message = ws.receive()
-
             if message is None:
                 break
-
-            # El navegador puede mandar "ping" si se desea.
             if message == "ping":
-                try:
-                    ws.send("pong")
-                except Exception:
-                    break
-
+                ws.send("pong")
     except Exception as exc:
         print(f"[WS] conexión terminada: {exc}")
-
     finally:
         with clients_lock:
             clients.discard(ws)
             with state_lock:
                 state["connected_clients"] = len(clients)
-
         print("[WS] cliente desconectado")
 
 
@@ -390,123 +427,108 @@ def index():
 @app.route("/api/status")
 def api_status():
     with state_lock:
-        result = dict(state)
-
+        result = {
+            "mode": state["mode"],
+            "cycle": state["cycle"],
+            "connected_clients": state["connected_clients"],
+            "day": state["day"]["day"] if state["day"] else None,
+        }
     result["today"] = date.today().isoformat()
-    result["available_dates"] = [
-        d.isoformat() for d in available_thought_dates()
-    ]
-
     return jsonify(result)
 
 
 @app.route("/api/scan")
 def api_scan():
-    days = available_thought_dates()
-
+    days = list_log_days()
     return jsonify({
         "log_dir": str(LOG_DIR),
         "today": date.today().isoformat(),
-        "oldest_thought_date": days[-1].isoformat() if days else None,
+        "first_day": days[0].isoformat() if days else None,
+        "last_day": days[-1].isoformat() if days else None,
         "dates": [d.isoformat() for d in days],
     })
 
 
 # ============================================================
-# ANTOLOGÍA
+# RECORRIDO DIARIO
 # ============================================================
 
+def set_state(**kw):
+    with state_lock:
+        state.update(kw)
+
+
+def run_day(day, cycle, previous):
+    """
+    1. Dibuja las secciones del día y arranca el visual central.
+    2. Mientras el visual corre, OpenAI prepara la despedida.
+    3. Al terminar el visual muestra la frase en el centro.
+    4. Apaga todo y deja pasar unos segundos.
+    Devuelve la frase generada (para evitar repetir la siguiente).
+    """
+    data = read_day(day)
+    thoughts = data.pop("_thoughts")
+
+    print(
+        f"[ANTOLOGÍA] {day.isoformat()}  entradas={data['entries']}  "
+        f"pensamientos={len(thoughts)}  oído={len(data['words'])}  "
+        f"localizaciones={len(data['locations'])}"
+    )
+
+    payload = {"type": "day", "cycle": cycle, **data}
+    set_state(mode="visual", day=payload, phrase=None, cycle=cycle)
+    broadcast(payload)
+
+    future = None
+    if thoughts:
+        future = executor.submit(generate_farewell, thoughts, day, previous)
+
+    time.sleep(VISUAL_SECONDS)
+
+    farewell = None
+    if future is not None:
+        try:
+            farewell = future.result(timeout=60)
+        except Exception as exc:
+            print(f"[OPENAI] Sin frase: {exc}")
+
+    if farewell:
+        phrase_payload = {"type": "phrase", "cycle": cycle, **farewell}
+        set_state(mode="phrase", phrase=phrase_payload)
+        broadcast(phrase_payload)
+        time.sleep(PHRASE_SECONDS)
+
+    set_state(mode="interlude", phrase=None)
+    broadcast({"type": "interlude", "cycle": cycle})
+    time.sleep(INTERLUDE_SECONDS)
+
+    return farewell or previous
+
+
 def anthology_loop():
-    """
-    Recorre:
-
-        hoy -> ayer -> ... -> fecha más antigua con pensamientos
-
-    Al terminar, vuelve a HOY.
-
-    Cada visita al mismo día vuelve a llamar a OpenAI, por lo que
-    la frase antológica no es una reproducción fija.
-    """
-
+    """Primer día -> ... -> último día -> vuelve al primero."""
     previous = None
     cycle = 0
 
     while True:
-
-        days = available_thought_dates()
+        days = list_log_days()
 
         if not days:
-            print("[ANTOLOGÍA] No hay pensamientos todavía.")
+            print(f"[ANTOLOGÍA] No hay logs en {LOG_DIR}")
+            set_state(mode="idle", day=None, phrase=None)
+            broadcast({"type": "empty", "log_dir": str(LOG_DIR)})
             time.sleep(10)
             continue
 
-        # Intermedio inicial.
-        broadcast({
-            "type": "interlude",
-            "emotion": "Neutral",
-            "date": "",
-            "text": "",
-            "cycle": cycle,
-        })
-
         for day in days:
+            try:
+                previous = run_day(day, cycle, previous)
+            except Exception as exc:
+                print(f"[ANTOLOGÍA] Error en {day}: {type(exc).__name__}: {exc}")
+                time.sleep(5)
 
-            thoughts = read_thoughts_for_date(day)
-
-            if not thoughts:
-                continue
-
-            print(
-                f"[ANTOLOGÍA] {day.isoformat()} "
-                f"({len(thoughts)} pensamientos)"
-            )
-
-            # Generativa: siempre genera una frase nueva.
-            item = generate_anthology(
-                thoughts=thoughts,
-                day=day,
-                previous=previous
-            )
-
-            previous = item
-
-            with state_lock:
-                state.update({
-                    "mode": "phrase",
-                    "text": item["frase"],
-                    "emotion": item["sentimiento"],
-                    "date": item["fecha"],
-                    "cycle": cycle,
-                    "source_thoughts": item["fuente_pensamientos"],
-                })
-
-            broadcast({
-                "type": "phrase",
-                **item,
-                "cycle": cycle,
-            })
-
-            time.sleep(PHRASE_SECONDS)
-
-            # Intermedio ASCII antes de la siguiente frase.
-            with state_lock:
-                state["mode"] = "interlude"
-
-            broadcast({
-                "type": "interlude",
-                "emotion": item["sentimiento"],
-                "date": item["fecha"],
-                "text": "",
-                "cycle": cycle,
-            })
-
-            time.sleep(INTERLUDE_SECONDS)
-
-        # Terminó el recorrido histórico.
-        # Volverá a consultar los logs: si aparecieron nuevos días,
-        # se incorporarán automáticamente.
         cycle += 1
-        print("[ANTOLOGÍA] Fin del recorrido. Regresando a hoy.")
+        print("[ANTOLOGÍA] Fin del recorrido. Regresando al primer día.")
 
 
 if __name__ == "__main__":
@@ -514,29 +536,16 @@ if __name__ == "__main__":
     print("==============================================")
     print(" MACCO — ANTOLOGÍA DIARIA")
     print("==============================================")
-    print(f"LOG_DIR      : {LOG_DIR}")
-    print(f"OPENAI_MODEL : {OPENAI_MODEL}")
-    print(f"HOST         : {HOST}")
-    print(f"PORT         : {PORT}")
-    print("")
-    print(f"URL: http://<IP_RASPBERRY>:{PORT}")
+    print(f"LOG_DIR        : {LOG_DIR}")
+    print(f"OPENAI_MODEL   : {OPENAI_MODEL}")
+    print(f"VISUAL_SECONDS : {VISUAL_SECONDS}")
+    print(f"PHRASE_SECONDS : {PHRASE_SECONDS}")
+    print(f"HOST / PORT    : {HOST}:{PORT}")
     print("")
 
     if not os.getenv("OPENAI_API_KEY"):
         print("ADVERTENCIA: OPENAI_API_KEY no está configurada.")
 
-    worker = threading.Thread(
-        target=anthology_loop,
-        daemon=True,
-        name="anthology-loop",
-    )
-    worker.start()
+    threading.Thread(target=anthology_loop, daemon=True, name="anthology").start()
 
-    # Flask-Sock usa WebSocket nativo; no hay Socket.IO ni CDN.
-    app.run(
-        host=HOST,
-        port=PORT,
-        threaded=True,
-        debug=False,
-        use_reloader=False,
-    )
+    app.run(host=HOST, port=PORT, threaded=True, debug=False, use_reloader=False)

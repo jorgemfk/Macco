@@ -1,1010 +1,466 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
-<title>MACCO — Antología</title>
-
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MACCO — Antología diaria</title>
 <style>
-:root {
-    --bg: #000;
-    --fg: #f2f2f2;
-    --dim: rgba(255,255,255,.18);
-}
+  :root {
+    --ink: #c6d0e6;
+    --dim: #6c7894;
+    --faint: #2b3552;
+    --accent: #8fb0ff;
+    --enojo: #ff3b55;
+    --asco: #7fe08a;
+    --miedo: #b45fd0;
+    --felicidad: #ffd633;
+    --tristeza: #4a8dff;
+    --sorpresa: #ff9a3c;
+    --neutral: #a8a8a8;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: min(0.78vw, 1.387vh); background: #000; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden; background: #000; color: var(--ink);
+    font: 1rem/1.4 "DejaVu Sans Mono", "Liberation Mono", Menlo, Consolas, monospace;
+    letter-spacing: 0.06em; cursor: none;
+  }
+  #stage {
+    display: grid; grid-template-columns: 21rem 1fr 29rem;
+    height: 100vh; padding: 2.4rem 2.5rem;
+  }
+  aside { display: flex; flex-direction: column; min-height: 0; }
+  .panel { transition: opacity 1.2s ease; }
+  .panel.off { opacity: 0; }
 
-* {
-    box-sizing: border-box;
-}
+  h1 { margin: 0; font-weight: 400; font-size: 2.3rem; letter-spacing: 0.5em; color: #e8edf8;
+       display: flex; align-items: center; gap: 1.2rem; }
+  h1 i { display: block; width: 4.5rem; height: 1px; background: var(--dim); }
+  .tag { margin: 0.2rem 0 0; color: var(--dim); font-size: 1.15rem; letter-spacing: 0.2em; }
+  h2 { margin: 0 0 0.9rem; font-weight: 400; font-size: 1.05rem; letter-spacing: 0.16em; color: var(--accent); }
 
-html, body {
-    margin: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: var(--bg);
-    color: var(--fg);
-}
+  #sound { margin-top: 3.4rem; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #wave { width: 100%; height: 2.2rem; flex: none; }
+  .sub { margin: 1.4rem 0 0.5rem; font-size: 0.8rem; color: var(--dim); letter-spacing: 0.04em; }
+  #words { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 0; overflow: hidden; position: relative; }
+  #words li { color: #77829c; font-size: 1rem; line-height: 1.55; white-space: nowrap;
+              overflow: hidden; text-overflow: ellipsis; transition: color 0.8s ease; }
+  #words li.on { color: #fff; transition-duration: 0.15s; }
+  #more { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--faint); min-height: 1.1rem; }
 
-body {
-    font-family: Arial, Helvetica, sans-serif;
-}
+  #vista { flex: none; margin-top: 1rem; }
+  #grid { width: 17rem; height: 14rem; display: block; }
+  #coords { margin: 0.9rem 0 0; font-size: 1.05rem; color: #aeb8d0; }
+  #conc { margin: 0.1rem 0 0; font-size: 1.05rem; color: var(--dim); }
 
-#stage {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-    background: #000;
-}
+  #center { position: relative; min-width: 0; }
+  #vortex { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #phrase {
+    position: absolute; left: 50%; top: 50%; width: 62%; transform: translate(-50%, -50%);
+    text-align: center; opacity: 0; transition: opacity 1.6s ease; pointer-events: none;
+    padding: 4rem 3rem;
+    background: radial-gradient(closest-side, rgba(0,0,0,0.88) 55%, rgba(0,0,0,0) 100%);
+  }
+  #phrase.on { opacity: 1; }
+  #ptext { margin: 0; font-size: 2.1rem; line-height: 1.6; letter-spacing: 0.03em; color: #f2f5ff;
+           font-weight: 300; text-shadow: 0 0 1.4rem #000; min-height: 4rem; }
+  #pmeta { margin: 2rem 0 0; font-size: 1rem; color: var(--dim); letter-spacing: 0.18em; }
+  #pmeta b { font-weight: 400; margin-right: 1.2rem; }
 
-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: block;
-}
+  #right h2 { letter-spacing: 0.14em; }
+  .emo { display: grid; grid-template-columns: 1.3rem 6.6rem 1fr 3.2rem 3rem; align-items: center;
+         height: 1.8rem; font-size: 1rem; }
+  .emo .dot { width: 0.85rem; height: 0.85rem; border-radius: 50%; }
+  .emo .track { height: 0.75rem; background: #1b2132; margin: 0 1rem; }
+  .emo .fill { height: 100%; width: 0; transition: width 1.4s cubic-bezier(.2,.7,.2,1); }
+  .emo .pct { text-align: right; color: #cfd6e8; }
+  .emo .n { text-align: right; color: var(--dim); }
 
-#phraseLayer {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 7vw;
-    pointer-events: none;
-    z-index: 3;
-}
+  #log { margin-top: 2.6rem; }
+  #log h2 { margin-bottom: 0.4rem; }
+  #logfile { margin: 0; font-size: 1rem; color: #e3e8f5; }
+  #logfile span { color: var(--dim); margin-left: 0.8rem; }
+  #log hr { border: 0; border-top: 1px solid var(--faint); margin: 0.9rem 0 1.1rem; }
+  .row { display: grid; grid-template-columns: 11.5rem 1.4rem 1fr; font-size: 0.95rem; line-height: 1.55; color: #aeb8d0; }
 
-#phrase {
-    max-width: 88vw;
-    text-align: center;
+  #foot { margin-top: auto; border-top: 1px solid var(--faint); padding-top: 1.7rem; display: flex; gap: 1.6rem; align-items: center; }
+  #foot svg { width: 4rem; height: 2rem; flex: none; }
+  #foot p { margin: 0; font-size: 0.8rem; color: var(--dim); line-height: 1.5; }
+  #foot p + p { font-size: 0.95rem; letter-spacing: 0.18em; }
 
-    font-size: clamp(42px, 6vw, 112px);
-    line-height: 1.08;
-    font-weight: 300;
-    letter-spacing: .015em;
-
-    opacity: 0;
-    transform: translateY(18px) scale(.97);
-    filter: blur(14px);
-
-    transition:
-        opacity 2.4s ease,
-        transform 3.2s cubic-bezier(.2,.8,.2,1),
-        filter 2.8s ease;
-}
-
-#phrase.visible {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-}
-
-#meta {
-    position: absolute;
-    z-index: 5;
-
-    left: 28px;
-    bottom: 24px;
-
-    font-family: monospace;
-    font-size: 12px;
-    letter-spacing: .25em;
-    text-transform: uppercase;
-
-    opacity: .22;
-
-    transition: opacity 1s ease;
-}
-
-#status {
-    position: absolute;
-    z-index: 5;
-
-    right: 25px;
-    top: 22px;
-
-    width: 8px;
-    height: 8px;
-
-    border-radius: 50%;
-    background: #333;
-
-    transition:
-        background .5s ease,
-        box-shadow .5s ease;
-}
-
-#status.connected {
-    background: #fff;
-    box-shadow: 0 0 18px rgba(255,255,255,.8);
-}
-
-#hint {
-    position: absolute;
-    z-index: 6;
-
-    inset: 0;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-family: monospace;
-    font-size: 18px;
-    opacity: .45;
-}
-
-.hidden {
-    display: none !important;
-}
-
-
-/* ==========================================================
-   COMPORTAMIENTO POR EMOCIÓN
-========================================================== */
-
-.emotion-tristeza #phrase {
-    animation: breathe 7s ease-in-out infinite;
-}
-
-.emotion-nostalgia #phrase {
-    animation: drift 8s ease-in-out infinite;
-}
-
-.emotion-miedo #phrase {
-    animation: fear 1.8s ease-in-out infinite;
-}
-
-.emotion-deseo #phrase {
-    animation: desire 5s ease-in-out infinite;
-}
-
-.emotion-ansiedad #phrase {
-    animation: anxious .16s linear infinite;
-}
-
-.emotion-curiosidad #phrase {
-    animation: curious 4.5s ease-in-out infinite;
-}
-
-.emotion-fascinacion #phrase {
-    animation: fascination 6s ease-in-out infinite;
-}
-
-.emotion-rechazo #phrase {
-    animation: reject 3s ease-in-out infinite;
-}
-
-.emotion-ternura #phrase {
-    animation: tender 6s ease-in-out infinite;
-}
-
-.emotion-verguenza #phrase {
-    animation: shy 5s ease-in-out infinite;
-}
-
-.emotion-soledad #phrase {
-    animation: lonely 9s ease-in-out infinite;
-}
-
-.emotion-alivio #phrase {
-    animation: relief 7s ease-in-out infinite;
-}
-
-.emotion-inquietud #phrase {
-    animation: inquiet 2.2s ease-in-out infinite;
-}
-
-.emotion-asombro #phrase {
-    animation: wonder 5s ease-in-out infinite;
-}
-
-.emotion-calma #phrase {
-    animation: calm 10s ease-in-out infinite;
-}
-
-.emotion-esperanza #phrase {
-    animation: hope 8s ease-in-out infinite;
-}
-
-
-/* ==========================================================
-   ANIMACIONES
-========================================================== */
-
-@keyframes breathe {
-    0%,100% { transform: scale(.985); opacity: .72; }
-    50%     { transform: scale(1.015); opacity: 1; }
-}
-
-@keyframes drift {
-    0%,100% { transform: translate(-4px, 3px) scale(.995); }
-    50%     { transform: translate(5px, -7px) scale(1.012); }
-}
-
-@keyframes fear {
-    0%,100% { transform: scale(1); }
-    38%     { transform: scale(1.035) translateX(-2px); }
-    55%     { transform: scale(.985) translateX(3px); }
-}
-
-@keyframes desire {
-    0%,100% { transform: scale(.97); letter-spacing: .015em; }
-    50%     { transform: scale(1.035); letter-spacing: .055em; }
-}
-
-@keyframes anxious {
-    0%   { transform: translateX(0); }
-    25%  { transform: translateX(-2px); }
-    50%  { transform: translateX(3px); }
-    75%  { transform: translateX(-3px); }
-    100% { transform: translateX(0); }
-}
-
-@keyframes curious {
-    0%,100% { transform: rotate(0deg) scale(.985); }
-    50%     { transform: rotate(.3deg) scale(1.025); }
-}
-
-@keyframes fascination {
-    0%,100% { filter: blur(0); transform: scale(.99); }
-    50%     { filter: blur(.5px); transform: scale(1.035); }
-}
-
-@keyframes reject {
-    0%,100% { transform: translateX(0) rotate(0); }
-    20%     { transform: translateX(-6px) rotate(-.2deg); }
-    50%     { transform: translateX(5px) rotate(.2deg); }
-}
-
-@keyframes tender {
-    0%,100% { transform: scale(.99); opacity: .82; }
-    50%     { transform: scale(1.025); opacity: 1; }
-}
-
-@keyframes shy {
-    0%,100% { transform: translateY(3px) scale(.985); opacity: .65; }
-    50%     { transform: translateY(-2px) scale(1); opacity: .95; }
-}
-
-@keyframes lonely {
-    0%,100% { transform: translateX(-5px); opacity: .62; }
-    50%     { transform: translateX(8px); opacity: .95; }
-}
-
-@keyframes relief {
-    0%   { transform: scale(.97); opacity: .65; }
-    40%  { transform: scale(1.04); opacity: 1; }
-    100% { transform: scale(1); opacity: .9; }
-}
-
-@keyframes inquiet {
-    0%,100% { transform: translateY(0); }
-    35%     { transform: translateY(-4px); }
-    65%     { transform: translateY(3px); }
-}
-
-@keyframes wonder {
-    0%,100% { transform: scale(.98); opacity: .7; }
-    45%     { transform: scale(1.055); opacity: 1; }
-}
-
-@keyframes calm {
-    0%,100% { transform: scale(.99); opacity: .84; }
-    50%     { transform: scale(1.012); opacity: 1; }
-}
-
-@keyframes hope {
-    0%,100% { transform: translateY(4px) scale(.985); opacity: .72; }
-    50%     { transform: translateY(-5px) scale(1.018); opacity: 1; }
-}
+  @media (prefers-reduced-motion: reduce) { .panel, #phrase, .emo .fill { transition: none; } }
 </style>
 </head>
-
 <body>
-
 <div id="stage">
 
-    <canvas id="ascii"></canvas>
+  <aside id="left">
+    <header class="panel">
+      <h1>MACCO<i></i></h1>
+      <p class="tag">ANTOLOGÍA DIARIA</p>
+    </header>
 
-    <div id="phraseLayer">
-        <div id="phrase"></div>
-    </div>
+    <section id="sound" class="panel off">
+      <h2>SONIDO / OÍDO</h2>
+      <canvas id="wave"></canvas>
+      <p class="sub">palabras detectadas:</p>
+      <ul id="words"></ul>
+      <p id="more"></p>
+    </section>
 
-    <div id="meta">MACCO · ANTOLOGÍA</div>
+    <section id="vista" class="panel off">
+      <h2>VISTA / LOCALIZACIÓN</h2>
+      <canvas id="grid"></canvas>
+      <p id="coords"></p>
+      <p id="conc"></p>
+    </section>
+  </aside>
 
-    <div id="status"></div>
+  <main id="center">
+    <canvas id="vortex"></canvas>
+    <div id="phrase"><p id="ptext"></p><p id="pmeta"></p></div>
+  </main>
 
-    <div id="hint">
-        conectando...
-    </div>
+  <aside id="right">
+    <section id="emos" class="panel off">
+      <h2>EMOCIONES ACUMULADAS (DÍA)</h2>
+      <div id="emorows"></div>
+    </section>
 
+    <section id="log" class="panel off">
+      <h2>LECTURA DEL LOG DIARIO</h2>
+      <p id="logfile"></p>
+      <hr>
+      <div id="logrows"></div>
+    </section>
+
+    <footer id="foot">
+      <svg viewBox="0 0 64 32" fill="none" stroke="#6c7894" stroke-width="1.4">
+        <path d="M2 16h8M14 10v12M18 4v24M22 12v8M26 8v16M30 14v4M34 11v10M38 6v20M42 13v6M46 9v14M50 15v2M54 16h8"/>
+      </svg>
+      <div><p>MACCO · 2026</p><p>UNA MÁQUINA QUE RECUERDA</p></div>
+    </footer>
+  </aside>
 </div>
 
-
 <script>
-/*
- * MACCO — Antología visual
- *
- * La esfera ASCII se basa en la lógica de la animación proporcionada:
- * superficie esférica + deformación + iluminación + caracteres ASCII.
- *
- * Aquí la animación cambia según el sentimiento recibido.
- */
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const rnd = Math.random;
+  const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * 0.9;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-const canvas = document.getElementById("ascii");
-const ctx = canvas.getContext("2d");
+  const COLORS = { Enojo: '#ff3b55', Asco: '#7fe08a', Miedo: '#b45fd0', Felicidad: '#ffd633',
+                   Tristeza: '#4a8dff', Sorpresa: '#ff9a3c', Neutral: '#a8a8a8' };
+  // Orden angular del espiral (sentido horario desde arriba).
+  const ORDER = ['Felicidad', 'Enojo', 'Sorpresa', 'Asco', 'Miedo', 'Tristeza', 'Neutral'];
+  // Sentimiento de la frase -> color de las emociones de visión.
+  const PHRASE_TINT = { Tristeza: 'Tristeza', Nostalgia: 'Tristeza', Soledad: 'Tristeza',
+    Miedo: 'Miedo', Ansiedad: 'Miedo', Inquietud: 'Miedo', Deseo: 'Enojo', Rechazo: 'Enojo',
+    Curiosidad: 'Sorpresa', Fascinación: 'Sorpresa', Asombro: 'Sorpresa', Ternura: 'Felicidad',
+    Alivio: 'Felicidad', Calma: 'Felicidad', Esperanza: 'Felicidad', Vergüenza: 'Asco' };
 
-const phrase = document.getElementById("phrase");
-const meta = document.getElementById("meta");
-const statusDot = document.getElementById("status");
-const hint = document.getElementById("hint");
-
-const BASE_CHARS = " .:-=+*#%@";
-
-let fontSize = 14;
-let cols = 0;
-let rows = 0;
-let dpr = 1;
-
-let mode = "interlude";
-let currentEmotion = "Neutral";
-let transitionToken = 0;
-
-
-/* ==========================================================
-   CONFIGURACIÓN VISUAL POR EMOCIÓN
-========================================================== */
-
-const EMOTION_STYLE = {
-    "Tristeza": {
-        speed: .45,
-        wave: 1.0,
-        pulse: 1.0,
-        light: [.2, .65, 1.7],
-        scale: .43
-    },
-
-    "Nostalgia": {
-        speed: .25,
-        wave: .65,
-        pulse: .65,
-        light: [-.8, .7, 1.2],
-        scale: .46
-    },
-
-    "Miedo": {
-        speed: 2.2,
-        wave: 2.4,
-        pulse: 2.0,
-        light: [1.2, .2, .6],
-        scale: .42
-    },
-
-    "Deseo": {
-        speed: .8,
-        wave: 1.5,
-        pulse: 1.8,
-        light: [1.0, .85, 1.0],
-        scale: .48
-    },
-
-    "Ansiedad": {
-        speed: 3.2,
-        wave: 3.5,
-        pulse: 2.8,
-        light: [-1.5, .5, .8],
-        scale: .40
-    },
-
-    "Curiosidad": {
-        speed: 1.25,
-        wave: 1.7,
-        pulse: 1.2,
-        light: [.7, 1.2, 1.4],
-        scale: .47
-    },
-
-    "Fascinación": {
-        speed: .55,
-        wave: 1.9,
-        pulse: 1.7,
-        light: [1.0, 1.0, 1.7],
-        scale: .50
-    },
-
-    "Rechazo": {
-        speed: 1.7,
-        wave: 2.8,
-        pulse: 2.4,
-        light: [-1.2, .2, .8],
-        scale: .43
-    },
-
-    "Ternura": {
-        speed: .35,
-        wave: .8,
-        pulse: .6,
-        light: [.4, 1.0, 1.8],
-        scale: .45
-    },
-
-    "Vergüenza": {
-        speed: .65,
-        wave: 1.2,
-        pulse: .8,
-        light: [-.5, .8, 1.0],
-        scale: .42
-    },
-
-    "Soledad": {
-        speed: .18,
-        wave: .45,
-        pulse: .35,
-        light: [-1.4, .35, 1.0],
-        scale: .38
-    },
-
-    "Alivio": {
-        speed: .3,
-        wave: .75,
-        pulse: .8,
-        light: [.8, 1.1, 1.8],
-        scale: .47
-    },
-
-    "Inquietud": {
-        speed: 1.8,
-        wave: 2.2,
-        pulse: 1.8,
-        light: [1.3, .4, .7],
-        scale: .44
-    },
-
-    "Asombro": {
-        speed: .9,
-        wave: 1.3,
-        pulse: 1.5,
-        light: [1.2, 1.0, 1.8],
-        scale: .52
-    },
-
-    "Calma": {
-        speed: .12,
-        wave: .3,
-        pulse: .25,
-        light: [.3, 1.0, 1.8],
-        scale: .45
-    },
-
-    "Esperanza": {
-        speed: .22,
-        wave: .65,
-        pulse: .75,
-        light: [.5, 1.3, 1.8],
-        scale: .48
-    },
-
-    "Neutral": {
-        speed: .55,
-        wave: 1.0,
-        pulse: 1.0,
-        light: [.5, .85, 1.5],
-        scale: .46
+  // ---------------- sprites (caracteres pre-dibujados) ----------------
+  const sprites = new Map();
+  const SP = Math.round(16 * DPR);
+  function sprite(kind, color) {
+    const key = kind + color;
+    let s = sprites.get(key);
+    if (s) return s;
+    s = document.createElement('canvas'); s.width = s.height = SP;
+    const g = s.getContext('2d'), c = SP / 2, u = DPR;
+    g.strokeStyle = g.fillStyle = color; g.lineWidth = 1.3 * u;
+    if (kind === 'sq') g.strokeRect(c - 4 * u, c - 4 * u, 8 * u, 8 * u);
+    else if (kind === 'ring') { g.beginPath(); g.arc(c, c, 3.4 * u, 0, 7); g.stroke(); }
+    else if (kind === '+') {
+      g.lineWidth = 1.8 * u; g.beginPath();
+      g.moveTo(c - 4 * u, c); g.lineTo(c + 4 * u, c); g.moveTo(c, c - 4 * u); g.lineTo(c, c + 4 * u); g.stroke();
+    } else {
+      g.font = `${11 * u}px "DejaVu Sans Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(kind, c, c);
     }
-};
+    sprites.set(key, s);
+    return s;
+  }
+  const SMALL = ['.', ':', '0', '1', '/', '\\', "'", ',', '-', '|', '=', 'o', '2', '7', '+'];
 
+  // ---------------- estado ----------------
+  let mode = 'idle';            // idle | visual | phrase | interlude
+  let day = null;
+  let parts = [];
+  let path = [[50, 50]];
+  let randomLoc = false;
+  let heat = null, heatMax = 0;
+  let t0 = performance.now(), VIS = 25;
+  let fade = 0;
+  let ghost = [50, 50];
+  let trail = [], lastTrail = 0;
 
-function getStyle(emotion) {
-    return EMOTION_STYLE[emotion] || EMOTION_STYLE["Neutral"];
-}
-
-
-function resize() {
-
-    dpr = Math.min(
-        window.devicePixelRatio || 1,
-        2
-    );
-
-    canvas.width =
-        Math.floor(innerWidth * dpr);
-
-    canvas.height =
-        Math.floor(innerHeight * dpr);
-
-    canvas.style.width =
-        innerWidth + "px";
-
-    canvas.style.height =
-        innerHeight + "px";
-
-    ctx.setTransform(
-        dpr, 0, 0, dpr, 0, 0
-    );
-
-    /*
-     * La fuente monoespaciada es más ancha que alta.
-     * Ajustamos para que la esfera conserve proporciones.
-     */
-    fontSize = Math.max(
-        9,
-        Math.min(
-            18,
-            innerWidth / 90
-        )
-    );
-
-    ctx.font =
-        `${fontSize}px monospace`;
-
-    cols = Math.floor(
-        innerWidth /
-        (fontSize * .62)
-    );
-
-    rows = Math.floor(
-        innerHeight /
-        fontSize
-    );
-}
-
-window.addEventListener(
-    "resize",
-    resize
-);
-
-resize();
-
-
-function gray2ASCII(v) {
-
-    v = Math.max(
-        0,
-        Math.min(1, v)
-    );
-
-    const index =
-        Math.floor(
-            v * (BASE_CHARS.length - 1)
-        );
-
-    return BASE_CHARS[index];
-}
-
-
-function render(time) {
-
-    const t = time / 1000;
-
-    ctx.fillStyle = "#000";
-    ctx.fillRect(
-        0,
-        0,
-        innerWidth,
-        innerHeight
-    );
-
-    if (mode !== "interlude") {
-        requestAnimationFrame(render);
-        return;
+  // ---------------- visual central ----------------
+  const cv = $('vortex'), cx2 = cv.getContext('2d');
+  let W = 0, H = 0;
+  function resize() {
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    cx2.setTransform(DPR, 0, 0, DPR, 0, 0);
+    for (const id of ['wave', 'grid']) {
+      const c = $(id), r = c.getBoundingClientRect();
+      c.width = Math.round(r.width * DPR); c.height = Math.round(r.height * DPR);
     }
+    fitWords();
+  }
+  window.addEventListener('resize', resize);
 
-    ctx.font =
-        `${fontSize}px monospace`;
+  function build(emotions) {
+    let total = emotions.reduce((a, e) => a + e.count, 0);
+    const w = {};
+    if (total === 0) { w.Neutral = 1; total = 1; } else emotions.forEach(e => { if (e.count) w[e.name] = e.count; });
 
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "#f2f2f2";
+    const sectors = []; let a = -Math.PI / 2;
+    for (const name of ORDER) {
+      if (!w[name]) continue;
+      const span = (w[name] / total) * Math.PI * 2;
+      sectors.push({ name, start: a, span, cum: 0 });
+      a += span;
+    }
+    let acc = 0; sectors.forEach(s => { acc += s.span; s.cum = acc; });
 
-    const style =
-        getStyle(currentEmotion);
+    const N = Number(new URLSearchParams(location.search).get('n')) || 2400;
+    parts = [];
+    for (let i = 0; i < N; i++) {
+      const pick = rnd() * acc;
+      const s = sectors.find(s => pick <= s.cum) || sectors[sectors.length - 1];
+      const a0 = s.start + rnd() * s.span + gauss() * 0.16;
+      const r = 0.13 + 0.87 * Math.pow(rnd(), 0.72);
+      const col = COLORS[s.name], q = rnd();
+      let kind, color = col, sc = 1, al = 0.35 + rnd() * 0.65;
+      if (q < 0.07) { kind = '+'; color = rnd() < 0.55 ? '#ffffff' : col; sc = 1.15; al = 0.9; }
+      else if (q < 0.085) { kind = 'sq'; color = '#ffffff'; al = 0.85; }
+      else if (q < 0.10) { kind = 'ring'; color = '#ffffff'; al = 0.85; }
+      else kind = SMALL[(rnd() * SMALL.length) | 0];
+      parts.push({ a0, r, spr: sprite(kind, color), sc, al,
+                   w: 0.012 + 0.03 * (1 - r), ph: rnd() * 6.28, delay: rnd() * 8 });
+    }
+  }
 
-    const sqrt2 = Math.sqrt(2);
+  // ---------------- localización ----------------
+  function makePath(locs) {
+    randomLoc = !locs.length;
+    if (!randomLoc) return locs;
+    const p = []; let x = 25 + rnd() * 50, y = 25 + rnd() * 50;
+    for (let i = 0; i < 24; i++) {
+      x = clamp(x + gauss() * 14, 6, 94); y = clamp(y + gauss() * 14, 6, 94); p.push([x, y]);
+    }
+    return p;
+  }
+  const COLS = 12, ROWS = 10;
+  function buildHeat(pts) {
+    heat = new Float32Array(COLS * ROWS);
+    for (const [x, y] of pts) {
+      const gx = x / 100 * (COLS - 1), gy = y / 100 * (ROWS - 1);
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const d2 = (c - gx) ** 2 + (r - gy) ** 2;
+        if (d2 < 9) heat[r * COLS + c] += Math.exp(-d2 / 1.6);
+      }
+    }
+    heatMax = Math.max(0.0001, ...heat);
+    const top = heatMax / (pts.length || 1);
+    $('conc').textContent = 'concentración: ' + (top > 0.55 ? 'alta' : top > 0.3 ? 'media' : 'baja')
+      + (randomLoc ? '  (aleatoria)' : '');
+  }
+  function ramp(v) {
+    if (v < 0.3) return [70, 100, 255];
+    if (v < 0.55) return [175, 75, 220];
+    if (v < 0.8) return [255, 140, 55];
+    return [255, 232, 90];
+  }
+  function drawGrid() {
+    const c = $('grid'), g = c.getContext('2d'), w = c.width, h = c.height;
+    g.clearRect(0, 0, w, h);
+    const cw = w / COLS, ch = h / ROWS;
+    g.strokeStyle = 'rgba(90,110,180,0.22)'; g.lineWidth = 1;
+    for (let i = 0; i <= COLS; i++) { g.beginPath(); g.moveTo(i * cw, 0); g.lineTo(i * cw, h); g.stroke(); }
+    for (let j = 0; j <= ROWS; j++) { g.beginPath(); g.moveTo(0, j * ch); g.lineTo(w, j * ch); g.stroke(); }
+    if (!heat) return;
+    let peak = 0, pi = 0;
+    for (let r = 0; r < ROWS; r++) for (let q = 0; q < COLS; q++) {
+      const i = r * COLS + q, v = heat[i] / heatMax;
+      if (v > peak) { peak = v; pi = i; }
+      if (v < 0.02) {
+        if (((i * 2654435761) >>> 0) % 7 === 0) { g.fillStyle = 'rgba(80,100,220,0.28)'; g.fillRect(q * cw + cw * 0.38, r * ch + ch * 0.38, cw * 0.24, ch * 0.24); }
+        continue;
+      }
+      const [R, G, B] = ramp(v), s = 0.25 + 0.7 * v;
+      g.fillStyle = `rgba(${R},${G},${B},${0.35 + 0.65 * v})`;
+      g.fillRect(q * cw + cw * (1 - s) / 2, r * ch + ch * (1 - s) / 2, cw * s, ch * s);
+    }
+    const pc = (pi % COLS + 0.5) * cw, pr = (Math.floor(pi / COLS) + 0.5) * ch;
+    const gr = g.createRadialGradient(pc, pr, 0, pc, pr, cw * 2.4);
+    gr.addColorStop(0, 'rgba(255,170,60,0.55)'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    // fantasma: la posición actual
+    g.strokeStyle = '#fff'; g.lineWidth = 1.5 * DPR;
+    const gx = ghost[0] / 100 * (w - cw) + cw / 2, gy = ghost[1] / 100 * (h - ch) + ch / 2;
+    g.strokeRect(gx - cw * 0.3, gy - ch * 0.3, cw * 0.6, ch * 0.6);
+  }
 
-    /*
-     * La velocidad, deformación y luz cambian con
-     * el sentimiento.
-     */
-    const dx =
-        Math.cos(
-            t * style.speed
-        ) * sqrt2;
+  function ghostAt(te) {
+    const n = path.length;
+    if (n === 1) return path[0];
+    const u = clamp(te / VIS, 0, 1) * (n - 1), i = Math.min(n - 2, Math.floor(u)), f = u - i, s = f * f * (3 - 2 * f);
+    return [path[i][0] + (path[i + 1][0] - path[i][0]) * s, path[i][1] + (path[i + 1][1] - path[i][1]) * s];
+  }
 
-    const dz =
-        Math.sin(
-            t * style.speed
-        ) * sqrt2;
+  // ---------------- paneles ----------------
+  function renderPanels(d) {
+    // oído
+    const ul = $('words'); ul.innerHTML = '';
+    (d.words.length ? d.words : ['(silencio)']).forEach(w => {
+      const li = document.createElement('li'); li.textContent = d.words.length ? `"${w}"` : w; ul.appendChild(li);
+    });
+    // emociones
+    $('emorows').innerHTML = d.emotions.map(e => `
+      <div class="emo"><span class="dot" style="background:${COLORS[e.name]}"></span><span>${e.name}</span>
+      <span class="track"><span class="fill" style="display:block;background:${COLORS[e.name]}" data-w="${e.pct}"></span></span>
+      <span class="pct">${e.pct}%</span><span class="n">(${e.count})</span></div>`).join('');
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      document.querySelectorAll('.fill').forEach(f => f.style.width = f.dataset.w + '%')));
+    // log
+    $('logfile').innerHTML = `${d.file}<span>(${d.entries} entradas)</span>`;
+    const c = d.counts, rows = [['Pensamientos', c.pensamiento], ['Oído', c.oido], ['Vista', c.vista],
+                                ['Tacto', c.tacto], ['Olfato', c.olfato], ['Emociones', c.emociones]];
+    $('logrows').innerHTML = rows.map(([k, v]) => `<div class="row"><span>${k}</span><span>:</span><span>${v}</span></div>`).join('');
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('off'));
+    fitWords();
+  }
 
-    const wavePhase =
-        Math.PI *
-        2 *
-        t *
-        style.wave;
+  let hi = 0;
+  function fitWords() {
+    const ul = $('words'), lis = [...ul.children];
+    lis.forEach(l => { l.hidden = false; l.classList.remove('on'); });
+    let hidden = 0; const lim = ul.clientHeight;
+    lis.forEach(l => { if (l.offsetTop + l.offsetHeight > lim + 1) { l.hidden = true; hidden++; } });
+    $('more').textContent = hidden ? `+${hidden} más` : '';
+  }
+  setInterval(() => {
+    const vis = [...$('words').children].filter(l => !l.hidden);
+    if (!vis.length) return;
+    vis.forEach(l => l.classList.remove('on'));
+    vis[hi++ % vis.length].classList.add('on');
+  }, 1100);
 
-    const lx =
-        style.light[0];
+  // ---------------- mensajes ----------------
+  let typer = null;
+  function startDay(d) {
+    day = d; VIS = d.visual_seconds || 25;
+    path = makePath(d.locations); ghost = path[0]; trail = [];
+    buildHeat(path); build(d.emotions);
+    t0 = performance.now(); mode = 'visual';
+    clearInterval(typer); $('phrase').classList.remove('on');
+    renderPanels(d);
+  }
+  function showPhrase(p) {
+    mode = 'phrase';
+    const el = $('ptext'); el.textContent = '';
+    const tint = COLORS[PHRASE_TINT[p.sentimiento]] || '#c6d0e6';
+    $('pmeta').innerHTML = `<b style="color:${tint}">${p.sentimiento}</b>${p.fecha}`;
+    $('phrase').classList.add('on');
+    clearInterval(typer); let i = 0;
+    typer = setInterval(() => { el.textContent = p.frase.slice(0, ++i); if (i >= p.frase.length) clearInterval(typer); }, 38);
+  }
+  function interlude() {
+    mode = 'interlude';
+    $('phrase').classList.remove('on');
+    document.querySelectorAll('#stage .panel').forEach(p => { if (p.tagName !== 'HEADER') p.classList.add('off'); });
+  }
+  function onMessage(m) {
+    if (m.type === 'day') startDay(m);
+    else if (m.type === 'phrase') showPhrase(m);
+    else if (m.type === 'interlude') interlude();
+    else if (m.type === 'empty') {
+      mode = 'idle'; $('phrase').classList.add('on');
+      $('ptext').textContent = 'Sin registros todavía'; $('pmeta').textContent = m.log_dir;
+    }
+  }
 
-    const ly =
-        style.light[1];
+  // ---------------- animación ----------------
+  const wave = $('wave'); let last = 0;
+  function drawWave(t) {
+    const g = wave.getContext('2d'), w = wave.width, h = wave.height, n = 64, bw = w / n;
+    g.clearRect(0, 0, w, h);
+    const amp = day ? clamp(0.3 + day.words.length / 20, 0.3, 1) : 0.2;
+    for (let i = 0; i < n; i++) {
+      const v = Math.abs(Math.sin(i * 0.7 + t * 2.6) * Math.sin(i * 0.23 + t * 1.1)) * amp;
+      const bh = Math.max(2 * DPR, v * h);
+      g.fillStyle = v > 0.6 * amp ? '#c8d4f0' : '#6c7894';
+      g.fillRect(i * bw + bw * 0.25, (h - bh) / 2, bw * 0.5, bh);
+    }
+  }
 
-    const lz =
-        style.light[2];
+  let frameN = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 32) return;               // ~30 fps: suficiente y ligero para Raspberry
+    const dt = Math.min(0.1, (now - last) / 1000); last = now; frameN++;
+    const te = (now - t0) / 1000, t = now / 1000;
 
-    const lightLen =
-        Math.hypot(
-            lx,
-            ly,
-            lz
-        );
+    const target = mode === 'phrase' ? 0.22 : (mode === 'visual' ? 1 : 0);
+    fade += (target - fade) * Math.min(1, dt * 2.2);
 
-    const light = [
-        lx / lightLen,
-        ly / lightLen,
-        lz / lightLen
-    ];
+    // El fantasma recorre la ruta de localizaciones.
+    ghost = ghostAt(te);
+    const cx = W / 2 + (ghost[0] - 50) / 50 * W * 0.12;
+    const cy = H / 2 + (ghost[1] - 50) / 50 * H * 0.10;
+    const R = Math.min(W, H) * 0.44;
 
-    const ambient = .035;
-
-    const sphereSize =
-        Math.min(
-            cols,
-            rows * 2
-        ) * style.scale;
-
-    for (
-        let j = 0;
-        j < rows;
-        j++
-    ) {
-
-        let line = "";
-
-        for (
-            let i = 0;
-            i < cols;
-            i++
-        ) {
-
-            let x =
-                (i - cols / 2) /
-                sphereSize;
-
-            let y =
-                (j - rows / 2) /
-                sphereSize;
-
-            const wave =
-                Math.sin(
-                    wavePhase + y * 1.5
-                );
-
-            const pulse =
-                Math.pow(
-                    .5 +
-                    .5 * wave,
-                    4
-                ) *
-                style.pulse;
-
-            x *=
-                1 -
-                .14 *
-                pulse;
-
-            x *= 1.3;
-
-            y *=
-                1 -
-                .07 *
-                pulse;
-
-            y =
-                y * 1.5 +
-                .15;
-
-            const inner =
-                Math.max(
-                    0,
-                    1 -
-                    Math.abs(x)
-                );
-
-            y =
-                y -
-                Math.abs(x) *
-                Math.sqrt(inner);
-
-            const z2 =
-                1 -
-                x * x -
-                y * y;
-
-            if (z2 > 0) {
-
-                const z =
-                    Math.sqrt(z2);
-
-                let dirX = dx;
-                let dirY = 1;
-                let dirZ = dz;
-
-                const dirLen =
-                    Math.hypot(
-                        dirX,
-                        dirY,
-                        dirZ
-                    );
-
-                dirX /= dirLen;
-                dirY /= dirLen;
-                dirZ /= dirLen;
-
-                let intensity =
-                    .5 *
-                    Math.max(
-                        0,
-                        x * dirX +
-                        y * dirY +
-                        z * dirZ
-                    );
-
-                /*
-                 * Pequeña modulación para que la esfera
-                 * nunca se sienta completamente estática.
-                 */
-                intensity +=
-                    .04 *
-                    Math.sin(
-                        t * style.speed * 2 +
-                        x * 8
-                    );
-
-                const brightness =
-                    Math.min(
-                        1,
-                        Math.max(
-                            0,
-                            intensity +
-                            ambient
-                        )
-                    );
-
-                line +=
-                    gray2ASCII(
-                        brightness
-                    );
-
-            } else {
-
-                line += " ";
-
-            }
-        }
-
-        ctx.fillText(
-            line,
-            0,
-            j * fontSize
-        );
+    cx2.clearRect(0, 0, W, H);
+    if (fade > 0.01 && parts.length) {
+      const h = SP / DPR, K = 3.0;
+      for (const p of parts) {
+        const vis = clamp((te - p.delay * 0.7) / 2.2, 0, 1);
+        if (vis <= 0) continue;
+        const th = p.a0 + K * (1 - p.r) + t * p.w;
+        const rr = p.r * (1 + 0.018 * Math.sin(t * 0.8 + p.ph)) * (0.55 + 0.45 * vis);
+        const x = cx + Math.cos(th) * rr * R, y = cy + Math.sin(th) * rr * R * 0.93;
+        cx2.globalAlpha = p.al * vis * fade * (0.8 + 0.2 * Math.sin(t * 1.7 + p.ph));
+        const s = h * p.sc;
+        cx2.drawImage(p.spr, x - s / 2, y - s / 2, s, s);
+      }
+      // estela del fantasma
+      if (now - lastTrail > 160) { trail.push({ x: cx, y: cy, t: now }); lastTrail = now; }
+      trail = trail.filter(q => now - q.t < 7000);
+      const ring = sprite('ring', '#ffffff'), plus = sprite('+', '#ffffff');
+      trail.forEach((q, i) => {
+        const age = (now - q.t) / 7000, s = h * (1 + age * 2.2);
+        cx2.globalAlpha = (1 - age) * 0.55 * fade;
+        cx2.drawImage(ring, q.x - s / 2, q.y - s / 2, s, s);
+      });
+      cx2.globalAlpha = 0.9 * fade;
+      cx2.drawImage(plus, cx - h * 0.9, cy - h * 0.9, h * 1.8, h * 1.8);
+      cx2.globalAlpha = 1;
     }
 
-    requestAnimationFrame(render);
-}
-
-requestAnimationFrame(render);
-
-
-/* ==========================================================
-   FRASES
-========================================================== */
-
-function normalizeEmotion(text) {
-
-    return String(text)
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(
-            /[\u0300-\u036f]/g,
-            ""
-        );
-}
-
-
-function setEmotionClass(emotion) {
-
-    const normalized =
-        normalizeEmotion(emotion);
-
-    document.body.className =
-        "emotion-" +
-        normalized;
-}
-
-
-function showPhrase(data) {
-
-    mode = "phrase";
-    currentEmotion =
-        data.sentimiento ||
-        data.emotion ||
-        "Neutral";
-
-    setEmotionClass(
-        currentEmotion
-    );
-
-    /*
-     * Primero desaparecer.
-     */
-    phrase.classList.remove(
-        "visible"
-    );
-
-    setTimeout(() => {
-
-        phrase.textContent =
-            data.frase ||
-            data.text ||
-            "";
-
-        meta.textContent =
-            `MACCO · ${data.fecha || ""} · ${currentEmotion}`;
-
-        phrase.classList.add(
-            "visible"
-        );
-
-    }, 500);
-}
-
-
-function showInterlude(data) {
-
-    mode = "interlude";
-
-    currentEmotion =
-        data.emotion ||
-        data.sentimiento ||
-        currentEmotion ||
-        "Neutral";
-
-    setEmotionClass(
-        currentEmotion
-    );
-
-    phrase.classList.remove(
-        "visible"
-    );
-
-    meta.textContent =
-        "MACCO · ANTOLOGÍA";
-}
-
-
-/* ==========================================================
-   WEBSOCKET NATIVO
-========================================================== */
-
-let ws = null;
-let reconnectTimer = null;
-
-
-function connect() {
-
-    const protocol =
-        location.protocol === "https:"
-            ? "wss:"
-            : "ws:";
-
-    ws = new WebSocket(
-        `${protocol}//${location.host}/ws`
-    );
-
-
-    ws.onopen = () => {
-
-        console.log(
-            "MACCO WebSocket conectado"
-        );
-
-        statusDot.classList.add(
-            "connected"
-        );
-
-        hint.classList.add(
-            "hidden"
-        );
-
-        ws.send("ping");
-    };
-
-
-    ws.onmessage = event => {
-
-        if (event.data === "pong") {
-            return;
-        }
-
-        try {
-
-            const data =
-                JSON.parse(
-                    event.data
-                );
-
-            console.log(
-                "MACCO:",
-                data
-            );
-
-            if (
-                data.type ===
-                "phrase"
-            ) {
-
-                showPhrase(data);
-
-            } else if (
-                data.type ===
-                "interlude"
-            ) {
-
-                showInterlude(data);
-
-            }
-
-        } catch (error) {
-
-            console.error(
-                "Mensaje inválido:",
-                error
-            );
-        }
-    };
-
-
-    ws.onclose = () => {
-
-        statusDot.classList.remove(
-            "connected"
-        );
-
-        hint.textContent =
-            "reconectando...";
-
-        hint.classList.remove(
-            "hidden"
-        );
-
-        clearTimeout(
-            reconnectTimer
-        );
-
-        reconnectTimer =
-            setTimeout(
-                connect,
-                2000
-            );
-    };
-
-
-    ws.onerror = error => {
-
-        console.error(
-            "WebSocket:",
-            error
-        );
-
-    };
-}
-
-
-connect();
-
+    drawWave(t);
+    if (frameN % 3 === 0) {
+      drawGrid();
+      $('coords').textContent = day ? `x: ${Math.round(ghost[0])}  y: ${Math.round(ghost[1])}` : '';
+    }
+  }
+
+  // ---------------- WebSocket ----------------
+  let retry = 500;
+  function connect() {
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    ws.onopen = () => { retry = 500; setInterval(() => ws.readyState === 1 && ws.send('ping'), 25000); };
+    ws.onmessage = (ev) => { if (ev.data === 'pong') return; try { onMessage(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
+    ws.onclose = () => { setTimeout(connect, retry); retry = Math.min(retry * 2, 8000); };
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+  connect();
+})();
 </script>
-
 </body>
 </html>

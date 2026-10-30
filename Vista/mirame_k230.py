@@ -229,9 +229,9 @@ VENTANA_MS = 60000
 def enviar_emociones_hilo(resumen):
     _thread.start_new_thread(enviar_emociones, (resumen,))
 
-def enviar_emociones_async(resumen):
+def enviar_emociones_async(resumen, localizacion):
     global pendientes
-    pendientes.append(resumen)
+    pendientes.append({"emociones": resumen, "localizacion": localizacion})
 
 def procesar_envios_pendientes():
     if not WIFI_OK:
@@ -269,49 +269,48 @@ def procesar_envios_pendientes():
     if time.ticks_diff(ahora, ultimo_envio) <= 2000:
         return
 
-    resumen = pendientes.pop(0)
+    payload = pendientes.pop(0)
 
-    # =========================
-    #  FILTRO DUPLICADOS
-    # =========================
-    if resumen == ultimo_resumen_enviado:
-        print("⏭ Duplicado descartado:", resumen)
+    # Filtro de duplicados: emociones y localización
+    if payload == ultimo_resumen_enviado:
+        print("Duplicado descartado:", payload)
         return
 
-    # =========================
-    #  ENVÍO
-    # =========================
-    enviar_emociones_hilo(resumen)
+    enviar_emociones_hilo(payload)
 
     ultimo_envio = ahora
-    ultimo_resumen_enviado = resumen
+    ultimo_resumen_enviado = payload
     envios_timestamps.append(ahora)
 
-    print("Enviado:", resumen)
+    print("Enviado:", payload)
 
-def enviar_emociones(resumen):
+def enviar_emociones(payload):
     if not WIFI_OK:
-        print(" WiFi no conectado, POST cancelado")
+        print("WiFi no conectado, POST cancelado")
         return
+
     try:
-        data = ujson.dumps({"emociones": resumen})
-        #host = "192.168.1.207"
+        data = ujson.dumps(payload)
+
         host = "192.168.0.82"
         port = 5820
         path = "/emociones"
 
-        s = usocket.socket()
-        s.settimeout(3.0)  # evita que se bloquee demasiado
-        s.connect((host, port))
-        s.send(b"POST %s HTTP/1.0\r\n" % path.encode())
-        s.send(b"Host: %s\r\n" % host.encode())
-        s.send(b"Content-Type: application/json\r\n")
-        s.send(b"Content-Length: %d\r\n\r\n" % len(data))
-        s.send(data.encode())
-        s.close()
-        print(" POST enviado")
+        sock = usocket.socket()
+        sock.settimeout(3.0)
+        sock.connect((host, port))
+
+        sock.send(b"POST %s HTTP/1.0\r\n" % path.encode())
+        sock.send(b"Host: %s\r\n" % host.encode())
+        sock.send(b"Content-Type: application/json\r\n")
+        sock.send(b"Content-Length: %d\r\n\r\n" % len(data.encode()))
+        sock.send(data.encode())
+        sock.close()
+
+        print("POST enviado:", data)
+
     except Exception as e:
-        print(" Error POST:", e)
+        print("Error POST:", e)
 
 def mostrar_mensaje(pl, texto, duracion_ms=1000):
     pl.osd_img.clear()
@@ -339,7 +338,7 @@ def WIFI_Connect(pl):
 
         for i in range(20):
 
-
+            wlan.connect('JORGEMFK', '')
 
 
             time.sleep_ms(300)
@@ -655,6 +654,7 @@ class FaceEmotion:
         if dets:
             resumen = {}
             cara=True
+            localizacion = None
             for det, emotion in zip(dets, emotions):
                 x, y, w, h = map(lambda x: int(round(x, 0)), det[:4])
                 #donde esta la 1er cara
@@ -665,6 +665,26 @@ class FaceEmotion:
                     # Centro del rostro en la imagen
                     face_center_pan = x + half_width
                     face_center_tilt = y + half_height
+
+                    #loc
+                    # Posición del centro del rostro en porcentaje (0-100)
+                    ancho = self.rgb888p_size[0]
+                    alto = self.rgb888p_size[1]
+
+                    porcentaje_x = max(
+                        0, min(100, int(face_center_pan * 100 / ancho))
+                    )
+
+                    porcentaje_y = max(
+                        0, min(100, int(face_center_tilt * 100 / alto))
+                    )
+
+                    localizacion = {
+                        "x": porcentaje_x,
+                        "y": porcentaje_y,
+                    }
+
+                    print("Localizacion:", localizacion["x"])
 
                     # Convertir coordenadas a ángulos de servo
                     My_centerx = map_value(face_center_pan, half_width, self.rgb888p_size[0]- half_width, 0, 120)
@@ -718,13 +738,18 @@ class FaceEmotion:
             else:
                 self.stable_counter = 0
             self.last_resumen = resumen
-
-            # --- Solo envía si la emoción se mantuvo estable N frames y pasaron 2 s ---
+            # --- Solo envía si la emocion se mantuvo estable N frames y pasaron 2 s
             if self.stable_counter >= self.required_stable_frames and tiempo_desde_ultimo > 2000:
                 print("Emociones estables:", resumen)
-                enviar_emociones_async(resumen)
-                self.last_send_time = current_time
-                self.stable_counter = 0  # Reinicia después de enviar
+                print("Localizacion:", localizacion)
+
+                if localizacion is not None:
+                    enviar_emociones_async(resumen, localizacion)
+
+                    self.last_send_time = current_time
+                    self.stable_counter = 0
+
+
 
 # ==========================================================
 # MAIN
@@ -763,7 +788,7 @@ if __name__=="__main__":
     #refres osd
     last_refresh = 0
     #temporal no mueve eje y
-    s.position(1, 35)
+    s.position(1, 25)
     while True:
         now = time.ticks_ms()
 
