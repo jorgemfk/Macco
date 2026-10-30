@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 from flask import Flask, render_template, jsonify
 from flask_sock import Sock
 from openai import OpenAI
@@ -31,6 +32,11 @@ VISUAL_SECONDS = float(os.getenv("MACCO_VISUAL_SECONDS", "25"))
 PHRASE_SECONDS = float(os.getenv("MACCO_PHRASE_SECONDS", "12"))
 # Pausa (pantalla apagándose) antes de redibujar con el siguiente día.
 INTERLUDE_SECONDS = float(os.getenv("MACCO_INTERLUDE_SECONDS", "4"))
+
+# Micrófono conectado a la Raspberry (sonido ambiental -> expansión del visual).
+AUDIO_ENABLED = os.getenv("MACCO_AUDIO", "1") != "0"
+AUDIO_DEVICE = os.getenv("MACCO_AUDIO_DEVICE")      # índice o nombre; vacío = predeterminado
+AUDIO_FPS = 25                                      # mensajes de nivel por segundo
 
 app = Flask(__name__)
 sock = Sock(app)
@@ -416,6 +422,68 @@ def websocket(ws):
 
 
 # ============================================================
+# MICRÓFONO (en la Raspberry)
+# ============================================================
+
+audio_lock = threading.Lock()
+audio_rms = 0.0
+
+
+def audio_callback(indata, frames, time_info, status):
+    global audio_rms
+    rms = float(np.sqrt(np.mean(np.square(indata[:, 0]))))
+    with audio_lock:
+        audio_rms = rms
+
+
+def audio_loop():
+    """
+    Lee el micrófono, normaliza con auto-ganancia (aprende el ruido de
+    fondo y el pico reciente) y envía el nivel 0..1 a los navegadores.
+    """
+    try:
+        import numpy as _np  # noqa: F401
+        import sounddevice as sd
+    except ImportError as exc:
+        print(f"[AUDIO] Desactivado, falta una librería: {exc}")
+        return
+
+    device = AUDIO_DEVICE
+    if device is not None and device.strip().lstrip("-").isdigit():
+        device = int(device)
+
+    floor, peak = 0.004, 0.03
+    smooth = 0.0
+
+    try:
+        stream = sd.InputStream(
+            device=device or None, channels=1, samplerate=16000,
+            blocksize=512, callback=audio_callback,
+        )
+    except Exception as exc:
+        print(f"[AUDIO] No se pudo abrir el micrófono: {exc}")
+        return
+
+    with stream:
+        print(f"[AUDIO] Micrófono activo: {sd.query_devices(stream.device)['name']}")
+        period = 1.0 / AUDIO_FPS
+        while True:
+            time.sleep(period)
+            with audio_lock:
+                rms = audio_rms
+
+            floor = rms if rms < floor else floor + (rms - floor) * 0.002
+            peak = rms if rms > peak else peak + (floor + 0.02 - peak) * 0.004
+            level = min(1.0, max(0.0, (rms - floor) / (peak - floor + 1e-4)))
+            smooth += (level - smooth) * 0.5
+
+            with clients_lock:
+                has_clients = bool(clients)
+            if has_clients:
+                broadcast({"type": "audio", "level": round(smooth, 3)})
+
+
+# ============================================================
 # WEB
 # ============================================================
 
@@ -548,4 +616,7 @@ if __name__ == "__main__":
 
     threading.Thread(target=anthology_loop, daemon=True, name="anthology").start()
 
-    app.run(host=HOST, port=PORT, threaded=True, debug=False, use_reloader=False)
+    if AUDIO_ENABLED:
+        threading.Thread(target=audio_loop, daemon=True, name="audio").start()
+
+    app.run(host=HOST, port=PORT, threaded=True, debug=True, use_reloader=False)

@@ -375,7 +375,8 @@
     document.querySelectorAll('#stage .panel').forEach(p => { if (p.tagName !== 'HEADER') p.classList.add('off'); });
   }
   function onMessage(m) {
-    if (m.type === 'day') startDay(m);
+    if (m.type === 'audio') { srvLevel = m.level; lastAudio = performance.now(); }
+    else if (m.type === 'day') startDay(m);
     else if (m.type === 'phrase') showPhrase(m);
     else if (m.type === 'interlude') interlude();
     else if (m.type === 'empty') {
@@ -404,6 +405,7 @@
     if (now - last < 32) return;               // ~30 fps: suficiente y ligero para Raspberry
     const dt = Math.min(0.1, (now - last) / 1000); last = now; frameN++;
     const te = (now - t0) / 1000, t = now / 1000;
+    micLevel(dt);
 
     const target = mode === 'phrase' ? 0.22 : (mode === 'visual' ? 1 : 0);
     fade += (target - fade) * Math.min(1, dt * 2.2);
@@ -421,7 +423,8 @@
         const vis = clamp((te - p.delay * 0.7) / 2.2, 0, 1);
         if (vis <= 0) continue;
         const th = p.a0 + K * (1 - p.r) + t * p.w;
-        const rr = p.r * (1 + 0.018 * Math.sin(t * 0.8 + p.ph)) * (0.55 + 0.45 * vis);
+        const breathe = 1 + 0.42 * (pulse - 0.33) * (0.4 + p.r);   // el borde exterior se mueve más
+        const rr = p.r * (1 + 0.018 * Math.sin(t * 0.8 + p.ph)) * (0.55 + 0.45 * vis) * breathe;
         const x = cx + Math.cos(th) * rr * R, y = cy + Math.sin(th) * rr * R * 0.93;
         cx2.globalAlpha = p.al * vis * fade * (0.8 + 0.2 * Math.sin(t * 1.7 + p.ph));
         const s = h * p.sc;
@@ -446,6 +449,16 @@
       drawGrid();
       $('coords').textContent = day ? `x: ${Math.round(ghost[0])}  y: ${Math.round(ghost[1])}` : '';
     }
+  }
+
+  // ---------------- sonido ambiental (llega del servidor) ----------------
+  // El micrófono está en la Raspberry; app.py envía {"type":"audio","level":0..1}.
+  // pulse: 0 = silencio, 1 = ruido fuerte. Sin datos de audio se queda en 0.33 (tamaño normal).
+  let pulse = 0.33, srvLevel = 0, lastAudio = -1e9;
+  function micLevel(dt) {
+    const live = performance.now() - lastAudio < 2000;
+    const target = live ? 0.15 + 0.85 * srvLevel : 0.33;
+    pulse += (target - pulse) * Math.min(1, dt * (target > pulse ? 12 : 3)); // sube rápido, baja lento
   }
 
   // ---------------- WebSocket ----------------
