@@ -300,8 +300,34 @@ def extract_json(text):
     return json.loads(text)
 
 
-def generate_farewell(thoughts, day, previous=None):
-    source = "\n".join(f"- {t['pensamiento']}" for t in thoughts[-80:])
+def day_material(thoughts, data):
+    """
+    Materia prima de la frase. Si hay pensamientos, se usan. Si el día no
+    tiene (logs antiguos), se usa lo demás que quedó registrado: palabras
+    oídas, emociones dominantes y cantidad de actividad.
+    """
+    if thoughts:
+        return "Pensamientos originales de ese día:\n" + "\n".join(
+            f"- {t['pensamiento']}" for t in thoughts[-80:])
+
+    lines = []
+    if data["words"]:
+        lines.append("Palabras que se oyeron: " + ", ".join(data["words"][:40]))
+    top = sorted((e for e in data["emotions"] if e["count"]),
+                 key=lambda e: e["count"], reverse=True)[:4]
+    if top:
+        lines.append("Emociones que más atravesaron ese día: " +
+                     ", ".join(f"{e['name']} ({e['pct']}%)" for e in top))
+    if data["entries"]:
+        lines.append(f"Fue un día con {data['entries']} registros de actividad.")
+    if not lines:
+        lines.append("Un día casi sin huellas: silencio, nadie a quien recordar.")
+    return ("Ese día no dejó pensamientos escritos, solo estos restos:\n"
+            + "\n".join(f"- {l}" for l in lines))
+
+
+def generate_farewell(thoughts, day, previous=None, data=None):
+    source = day_material(thoughts, data)
 
     previous_text = ""
     if previous:
@@ -315,7 +341,6 @@ No la reformules ni repitas su idea.
     user_prompt = f"""
 Fecha de la memoria: {day.isoformat()}
 
-Pensamientos originales de ese día:
 {source}
 
 {previous_text}
@@ -356,6 +381,8 @@ No la copies. No la resumas.
 
     except Exception as exc:
         print(f"[OPENAI] Error: {type(exc).__name__}: {exc}")
+        if not thoughts:
+            return None        # sin pensamientos y sin API: no se muestra frase
         return {
             "frase": thoughts[-1]["pensamiento"],
             "sentimiento": "Neutral",
@@ -547,9 +574,8 @@ def run_day(day, cycle, previous):
     set_state(mode="visual", day=payload, phrase=None, cycle=cycle)
     broadcast(payload)
 
-    future = None
-    if thoughts:
-        future = executor.submit(generate_farewell, thoughts, day, previous)
+    # Siempre se genera la despedida, haya o no pensamientos ese día.
+    future = executor.submit(generate_farewell, thoughts, day, previous, data)
 
     time.sleep(VISUAL_SECONDS)
 
@@ -619,4 +645,4 @@ if __name__ == "__main__":
     if AUDIO_ENABLED:
         threading.Thread(target=audio_loop, daemon=True, name="audio").start()
 
-    app.run(host=HOST, port=PORT, threaded=True, debug=True, use_reloader=False)
+    app.run(host=HOST, port=PORT, threaded=True, debug=False, use_reloader=False)
